@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{F94DD5BE-4998-4486-8895-9CB0E20D018A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Api", "src\TheRouteSetter.Api\TheRouteSetter.Api.csproj", "{49ABD160-3365-4C93-A05B-86AA8247AB8F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Application", "src\TheRouteSetter.Application\TheRouteSetter.Application.csproj", "{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{C556ABA6-8228-4AD1-9DBB-23101298F0E4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Api.Tests", "tests\TheRouteSetter.Api.Tests\TheRouteSetter.Api.Tests.csproj", "{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Api.IntegrationTests", "tests\TheRouteSetter.Api.IntegrationTests\TheRouteSetter.Api.IntegrationTests.csproj", "{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Hull.Tests", "tests\TheRouteSetter.Hull.Tests\TheRouteSetter.Hull.Tests.csproj", "{ECC8F908-C12C-4C13-A7B7-8535C6856590}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{49ABD160-3365-4C93-A05B-86AA8247AB8F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49ABD160-3365-4C93-A05B-86AA8247AB8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49ABD160-3365-4C93-A05B-86AA8247AB8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49ABD160-3365-4C93-A05B-86AA8247AB8F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ECC8F908-C12C-4C13-A7B7-8535C6856590}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ECC8F908-C12C-4C13-A7B7-8535C6856590}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ECC8F908-C12C-4C13-A7B7-8535C6856590}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ECC8F908-C12C-4C13-A7B7-8535C6856590}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{49ABD160-3365-4C93-A05B-86AA8247AB8F} = {F94DD5BE-4998-4486-8895-9CB0E20D018A}
+		{3A4E0845-B513-40E9-90B2-8F8E5CEBE20A} = {F94DD5BE-4998-4486-8895-9CB0E20D018A}
+		{94FA0AAE-CD37-4E35-A147-DFFE9D83F4E9} = {C556ABA6-8228-4AD1-9DBB-23101298F0E4}
+		{37FE5DE4-A6ED-4DFD-AAB5-02EE3F0C98B6} = {C556ABA6-8228-4AD1-9DBB-23101298F0E4}
+		{ECC8F908-C12C-4C13-A7B7-8535C6856590} = {C556ABA6-8228-4AD1-9DBB-23101298F0E4}
+	EndGlobalSection
+EndGlobal

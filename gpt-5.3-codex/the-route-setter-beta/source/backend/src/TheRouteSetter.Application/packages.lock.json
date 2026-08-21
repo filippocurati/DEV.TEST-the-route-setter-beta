@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "MIConvexHull": {
+        "type": "Direct",
+        "requested": "[1.1.19.504, 1.1.19.504]",
+        "resolved": "1.1.19.504",
+        "contentHash": "CX1nkoLm2MLHD2haSQdBbeFqIi0/v63NTGMIRvFAvAVtWRmtI0ONUq4SiApnOjNTWztVUqfZ/kd5N4uc8i6LGg=="
+      },
+      "SharpGLTF.Core": {
+        "type": "Direct",
+        "requested": "[1.0.0, 1.0.0]",
+        "resolved": "1.0.0",
+        "contentHash": "cfOyA8GXX6qJNx7U36RMj32fTql4mpd46reiMJK8M1MXeDtbPDcqLColYDfKGgcgC1zc3ABGJlvi3epxvuCzQw=="
+      }
+    }
+  }
+}

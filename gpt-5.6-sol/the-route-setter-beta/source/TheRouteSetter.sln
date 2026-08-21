@@ -1,0 +1,25 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Api", "backend\src\TheRouteSetter.Api\TheRouteSetter.Api.csproj", "{73DB2D46-2420-49C8-93C9-863B613294B8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheRouteSetter.Api.Tests", "backend\tests\TheRouteSetter.Api.Tests\TheRouteSetter.Api.Tests.csproj", "{58505C55-68C5-47FA-A3DB-0C2E4530E9F7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{73DB2D46-2420-49C8-93C9-863B613294B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{73DB2D46-2420-49C8-93C9-863B613294B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{73DB2D46-2420-49C8-93C9-863B613294B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{73DB2D46-2420-49C8-93C9-863B613294B8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{58505C55-68C5-47FA-A3DB-0C2E4530E9F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{58505C55-68C5-47FA-A3DB-0C2E4530E9F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{58505C55-68C5-47FA-A3DB-0C2E4530E9F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{58505C55-68C5-47FA-A3DB-0C2E4530E9F7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
