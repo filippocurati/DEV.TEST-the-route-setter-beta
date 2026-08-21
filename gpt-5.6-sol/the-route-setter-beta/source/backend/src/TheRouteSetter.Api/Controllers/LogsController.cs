@@ -31,7 +31,19 @@ public sealed class LogsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult Post([FromBody] FrontendLogRequest request)
     {
-        logs.Write(request);
+        if (request.Level == LogLevel.None)
+        {
+            ModelState.AddModelError(nameof(request.Level), "Il livello None non e accettato.");
+            return ValidationProblem(ModelState);
+        }
+
+        if (request.Context is { Count: > 20 })
+        {
+            ModelState.AddModelError(nameof(request.Context), "Sono consentite al massimo 20 proprieta di contesto.");
+            return ValidationProblem(ModelState);
+        }
+
+        logs.Write(request, HttpContext.TraceIdentifier);
         return Accepted();
     }
 }

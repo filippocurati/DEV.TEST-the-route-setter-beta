@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using TheRouteSetter.Api.Contracts;
+using TheRouteSetter.Api.Services;
 
 namespace TheRouteSetter.Api.Controllers;
 
@@ -17,20 +18,36 @@ public sealed class LogsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(FrontendLogResponseDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public ActionResult<FrontendLogResponseDto> PostLog([FromBody] FrontendLogRequestDto request)
     {
-        if (string.IsNullOrWhiteSpace(request.Message))
+        if (string.IsNullOrWhiteSpace(request.Level) ||
+            string.IsNullOrWhiteSpace(request.Category) ||
+            string.IsNullOrWhiteSpace(request.Message))
         {
             return BadRequest();
         }
 
         string logId = Guid.NewGuid().ToString("N");
+        string sanitizedLevel = FrontendLogSanitizer.SanitizeText(request.Level);
+        string sanitizedCategory = FrontendLogSanitizer.SanitizeText(request.Category);
+        string sanitizedMessage = FrontendLogSanitizer.SanitizeText(request.Message);
+        IDictionary<string, string> sanitizedContext = FrontendLogSanitizer.SanitizeContext(request.Context);
+        string? sanitizedErrorId = string.IsNullOrWhiteSpace(request.ErrorId)
+            ? null
+            : FrontendLogSanitizer.SanitizeText(request.ErrorId);
+        string requestId = HttpContext.TraceIdentifier;
+
         logger.LogInformation(
-            "Frontend log accepted {LogId} {Level} {Category} {Message}",
+            "Frontend log accepted {LogId} {RequestId} {ErrorId} {Level} {Category} {Message} {Component} {@Context}",
             logId,
-            request.Level,
-            request.Category,
-            request.Message);
+            requestId,
+            sanitizedErrorId,
+            sanitizedLevel,
+            sanitizedCategory,
+            sanitizedMessage,
+            "frontend",
+            sanitizedContext);
 
         return Accepted(new FrontendLogResponseDto(logId, "accepted"));
     }

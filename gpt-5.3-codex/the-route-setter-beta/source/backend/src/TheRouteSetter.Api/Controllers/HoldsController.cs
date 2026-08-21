@@ -17,6 +17,7 @@ public sealed class HoldsController : ControllerBase
 
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<HoldManifestDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<IReadOnlyList<HoldManifestDto>>> GetHolds(CancellationToken cancellationToken)
     {
         IReadOnlyList<HoldManifestDto> holds = await assetManifestService.GetHoldsAsync(cancellationToken);
@@ -26,6 +27,7 @@ public sealed class HoldsController : ControllerBase
     [HttpGet("{id}/model")]
     [ProducesResponseType(typeof(AssetFileUrlDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<AssetFileUrlDto>> GetHoldModel(string id, CancellationToken cancellationToken)
     {
         string? modelUrl = await assetManifestService.GetHoldModelUrlAsync(id, cancellationToken);
@@ -40,6 +42,7 @@ public sealed class HoldsController : ControllerBase
     [HttpGet("{id}/collider")]
     [ProducesResponseType(typeof(AssetFileUrlDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<AssetFileUrlDto>> GetHoldCollider(string id, CancellationToken cancellationToken)
     {
         string? colliderUrl = await assetManifestService.GetHoldColliderUrlAsync(id, cancellationToken);

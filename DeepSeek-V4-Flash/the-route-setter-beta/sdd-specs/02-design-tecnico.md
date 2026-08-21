@@ -44,9 +44,8 @@ Backend ASP.NET Core Web API:
       /Logging
     /Middleware
     /Models
-  /Data
-    /main-wall
-    /holds
+  /main-wall
+  /holds
   /tests
 
 /frontend

@@ -40,6 +40,10 @@ Tutti e 3 i risultati della seconda esecuzione della fase zero erano consistenti
 - elaborazione interrotta dopo 77 minuti, probabilmente per problemi di connessione, anche se le richieste agli altri modelli funzionano correttamente
 - seconda elaborazione finita con successo dopo 7 minuti ma anche qui l'endpoint  http://localhost:5118/api/holds/Hold1/model restituisce un 404 perché leggeva anche lui da cartelle in percorsi relativi
 - modifica per lettura da percorsi esterni molto lunga
+- modifica interrotta per tempi bloccanti, ho richiesto il codice da applicare al appsettings.json per poter procedere, applicata in autonomia e corretto la lettura dei file, ora la fase 1 può essere considerata completata
+
+Interrompo momentaneamente lo sviluppo con deepseek in quanto non supporta le richieste. 
+Al momento resta fermo alla fase 1 completata .
 
 ### gpt-5.6-sol
 
@@ -56,7 +60,7 @@ Tutti e 3 i risultati della seconda esecuzione della fase zero erano consistenti
 
 ## FASE 2 - 1° esecuzione
 
-Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek ancora deve finire la fase 1
+Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 1
 
 ### deepseek-v4-flash
 
@@ -68,3 +72,16 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek ancora deve f
 ### gpt-5.3-codex 
 - finito per primo in 12 minuti con esito positivo
 - implementazione totalmente corretta con generazione dei collider json per le prese
+
+
+## FASE 3 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- finito come secondo in 21 minuti
+- fase completata con successo , in run non si vede più l'indicazione dell'url in ascolto perché tutto spostato su file di log
+
+### gpt-5.3-codex 
+- finito per primo in 15 minuti con esito positivo
+- fase completata con successo , in run non si vede più l'indicazione dell'url in ascolto perché tutto spostato su file di log

@@ -84,7 +84,8 @@ public sealed class BaselineEndpointsTests : IClassFixture<ApiFactory>
             "Error",
             "frontend.runtime",
             "Errore simulato",
-            new Dictionary<string, string> { ["operation"] = "phase1-test" });
+            new Dictionary<string, string> { ["operation"] = "phase1-test" },
+            null);
 
         HttpResponseMessage response = await httpClient.PostAsJsonAsync("/api/logs", payload);
 

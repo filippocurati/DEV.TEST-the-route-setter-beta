@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TheRouteSetter.Application\TheRouteSetter.Application.csproj" />
+    <ProjectReference Include="..\..\src\TheRouteSetter.Api\TheRouteSetter.Api.csproj" />
   </ItemGroup>
 
 </Project>

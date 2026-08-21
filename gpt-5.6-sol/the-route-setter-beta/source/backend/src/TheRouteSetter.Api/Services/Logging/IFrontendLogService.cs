@@ -10,5 +10,5 @@ public interface IFrontendLogService
     /// <summary>
     /// Registra un evento frontend tramite il logging server-side.
     /// </summary>
-    void Write(FrontendLogRequest request);
+    void Write(FrontendLogRequest request, string requestId);
 }

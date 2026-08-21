@@ -79,7 +79,7 @@ Preparare soluzione backend/frontend/test conforme allo stack vincolato.
 - setup progetti test backend, test fisica headless, Playwright;
 - applicare baseline versioni `REQ-DEP-004`;
 - versionare lockfile npm/NuGet;
-- predisporre struttura dati `Data/main-wall`, `Data/holds/Hold<number>`.
+- predisporre struttura dati `main-wall`, `holds/Hold<number>`.
 
 ### Test da eseguire
 - build backend;

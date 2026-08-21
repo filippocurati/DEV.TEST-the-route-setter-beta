@@ -4,4 +4,5 @@ public sealed record FrontendLogRequestDto(
     string Level,
     string Category,
     string Message,
-    IDictionary<string, string>? Context);
+    IDictionary<string, string>? Context,
+    string? ErrorId = null);

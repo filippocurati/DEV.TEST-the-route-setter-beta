@@ -1,11 +1,16 @@
 using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.OpenApi.Models;
+using Serilog;
+using TheRouteSetter.Api.Middleware;
 using TheRouteSetter.Api.Services.Assets;
 using TheRouteSetter.Api.Services.ConvexHull;
 using TheRouteSetter.Api.Services.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, _, configuration) =>
+    ServerLoggingConfiguration.Configure(configuration, context.Configuration, context.HostingEnvironment.ContentRootPath));
 
 builder.Services
     .AddControllers()
@@ -31,11 +36,15 @@ builder.Services.AddSingleton<IGltfVertexReader, SharpGltfVertexReader>();
 builder.Services.AddSingleton<IConvexHullBuilder, MiConvexHullBuilder>();
 builder.Services.AddSingleton<IColliderProcessor, FileSystemColliderProcessor>();
 builder.Services.AddSingleton<IAssetCatalogService, FileSystemAssetCatalogService>();
+builder.Services.AddSingleton<ISensitiveDataSanitizer, SensitiveDataSanitizer>();
 builder.Services.AddSingleton<IFrontendLogService, FrontendLogService>();
 builder.Services.AddHostedService<ColliderGenerationWorker>();
 
 var app = builder.Build();
 
+app.UseMiddleware<RequestCorrelationMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();

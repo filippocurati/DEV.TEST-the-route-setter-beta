@@ -162,7 +162,8 @@ public sealed class ColliderGenerationWorkerTests
                 {
                     ["AssetStorage:RootPath"] = rootPath,
                     ["AssetStorage:MainWallDirectory"] = "main-wall",
-                    ["AssetStorage:HoldsDirectory"] = "holds"
+                    ["AssetStorage:HoldsDirectory"] = "holds",
+                    ["Logging:FilePath"] = Path.Combine(rootPath, "test-logs", "log-.json")
                 });
             });
             builder.ConfigureServices(services =>

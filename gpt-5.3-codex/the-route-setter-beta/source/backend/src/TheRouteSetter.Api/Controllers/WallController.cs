@@ -18,6 +18,7 @@ public sealed class WallController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(WallResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponseDto), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<WallResponseDto>> GetWall(CancellationToken cancellationToken)
     {
         WallResponseDto? wall = await assetManifestService.GetWallAsync(cancellationToken);

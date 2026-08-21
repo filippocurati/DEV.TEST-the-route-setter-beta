@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using TheRouteSetter.Api.Models;
 using TheRouteSetter.Api.Tests.Support;
 using Xunit;
@@ -94,9 +95,43 @@ public sealed class AssetApiIntegrationTests : IDisposable
     {
         var response = await client.PostAsJsonAsync(
             "/api/logs",
-            new FrontendLogRequest("Warning", "AssetLoad", "Anteprima non disponibile", "Catalog"));
+            new FrontendLogRequest(LogLevel.Warning, "AssetLoad", "Anteprima non disponibile", "Catalog"));
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Verifica che livello None, messaggi fuori limite e contesto eccessivo siano rifiutati.
+    /// </summary>
+    [Fact]
+    public async Task LogsEndpoint_RejectsInvalidPayloads()
+    {
+        var noneLevel = await client.PostAsJsonAsync(
+            "/api/logs",
+            new FrontendLogRequest(LogLevel.None, "UI", "Messaggio", "Catalog"));
+        var longMessage = await client.PostAsJsonAsync(
+            "/api/logs",
+            new FrontendLogRequest(LogLevel.Error, "UI", new string('x', 2001), "Catalog"));
+        var excessiveContext = Enumerable.Range(0, 21).ToDictionary(index => $"key{index}", index => $"value{index}");
+        var tooMuchContext = await client.PostAsJsonAsync(
+            "/api/logs",
+            new FrontendLogRequest(LogLevel.Warning, "UI", "Messaggio", "Catalog", excessiveContext));
+
+        Assert.Equal(HttpStatusCode.BadRequest, noneLevel.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, longMessage.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, tooMuchContext.StatusCode);
+    }
+
+    /// <summary>
+    /// Verifica che ogni risposta esponga lo stesso RequestId usato dalla pipeline di logging.
+    /// </summary>
+    [Fact]
+    public async Task Response_ContainsRequestCorrelationHeader()
+    {
+        var response = await client.GetAsync("/api/system/health");
+
+        Assert.True(response.Headers.TryGetValues("X-Request-Id", out var values));
+        Assert.False(string.IsNullOrWhiteSpace(Assert.Single(values)));
     }
 
     /// <summary>

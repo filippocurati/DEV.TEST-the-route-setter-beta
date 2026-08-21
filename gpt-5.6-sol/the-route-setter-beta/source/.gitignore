@@ -1,3 +1,4 @@
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
+backend/src/TheRouteSetter.Api/Logs/

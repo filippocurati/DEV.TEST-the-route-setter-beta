@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 
 namespace TheRouteSetter.Api.Models;
 
@@ -63,8 +65,22 @@ public sealed record HoldModelAsset(string Id, string ModelPath);
 /// <summary>
 /// Rappresenta un evento diagnostico inviato dal frontend.
 /// </summary>
-/// <param name="Level">Livello dichiarato dal frontend.</param>
+/// <param name="Level">Livello standard .NET dichiarato dal frontend.</param>
 /// <param name="Category">Categoria funzionale dell'evento.</param>
 /// <param name="Message">Messaggio sintetico non sensibile.</param>
 /// <param name="Component">Componente frontend che ha prodotto l'evento.</param>
-public sealed record FrontendLogRequest(string Level, string Category, string Message, string Component);
+/// <param name="Context">Contesto diagnostico limitato e facoltativo.</param>
+public sealed record FrontendLogRequest(
+    LogLevel Level,
+    [Required, StringLength(80, MinimumLength = 1)] string Category,
+    [Required, StringLength(2000, MinimumLength = 1)] string Message,
+    [Required, StringLength(80, MinimumLength = 1)] string Component,
+    IReadOnlyDictionary<string, string>? Context = null);
+
+/// <summary>
+/// Contratto sicuro restituito al client quando il backend intercetta un errore.
+/// </summary>
+/// <param name="ErrorId">Identificativo univoco correlabile al log server-side.</param>
+/// <param name="RequestId">Identificativo della richiesta HTTP.</param>
+/// <param name="Message">Messaggio comprensibile privo di dettagli tecnici.</param>
+public sealed record ErrorResponse(string ErrorId, string RequestId, string Message);

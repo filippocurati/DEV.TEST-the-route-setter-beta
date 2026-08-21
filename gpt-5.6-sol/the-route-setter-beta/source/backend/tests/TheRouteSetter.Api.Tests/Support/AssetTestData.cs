@@ -46,9 +46,16 @@ public sealed class AssetTestData : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (Directory.Exists(RootPath))
+        for (var attempt = 0; attempt < 20 && Directory.Exists(RootPath); attempt++)
         {
-            Directory.Delete(RootPath, recursive: true);
+            try
+            {
+                Directory.Delete(RootPath, recursive: true);
+            }
+            catch (IOException) when (attempt < 19)
+            {
+                Thread.Sleep(50);
+            }
         }
     }
 }
@@ -79,7 +86,8 @@ public sealed class AssetApiFactory : WebApplicationFactory<Program>
             {
                 ["AssetStorage:RootPath"] = rootPath,
                 ["AssetStorage:MainWallDirectory"] = "main-wall",
-                ["AssetStorage:HoldsDirectory"] = "holds"
+                ["AssetStorage:HoldsDirectory"] = "holds",
+                ["Logging:FilePath"] = Path.Combine(rootPath, "test-logs", "log-.json")
             });
         });
 
