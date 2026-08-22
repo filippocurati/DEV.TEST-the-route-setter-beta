@@ -49,6 +49,14 @@ GLB obbligatorio; texture/asset opzionali.
 **REQ-MOD-004 - File statici backend.**
 - Criteri: GLB/preview/collider serviti come statici con URL risolvibili.
 
+**REQ-MOD-005 - Convenzione orientamento modelli.**
+- Tutti i modelli devono utilizzare un sistema di coordinate destrorso coerente con three.js.
+- L'asse `Y` deve rappresentare la direzione verticale verso l'alto.
+- Il lato frontale arrampicabile della parete deve essere orientato verso `+Z`.
+- I modelli devono essere espressi in metri, con `1 unita = 1 metro`.
+- Rotazione e scala devono essere applicate prima dell'esportazione GLB.
+- Criteri: la camera iniziale posta sul semiasse `+Z` visualizza il fronte arrampicabile senza correzioni automatiche lato applicazione.
+
 ## CAT - Catalogo
 
 **REQ-CAT-001 - Catalogo a sinistra.**

@@ -85,3 +85,13 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 ### gpt-5.3-codex 
 - finito per primo in 15 minuti con esito positivo
 - fase completata con successo , in run non si vede più l'indicazione dell'url in ascolto perché tutto spostato su file di log
+
+## FASE 3 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- finito con successo con pari tempo rispetto a codex
+
+### gpt-5.3-codex 
+- finito con successo con pari tempo rispetto a codex

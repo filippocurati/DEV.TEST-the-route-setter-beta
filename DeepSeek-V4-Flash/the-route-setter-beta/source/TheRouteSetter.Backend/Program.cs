@@ -1,6 +1,7 @@
 using TheRouteSetter.Backend.Services.Wall;
 using TheRouteSetter.Backend.Services.Catalog;
 using TheRouteSetter.Backend.Services.Logging;
+using TheRouteSetter.Backend.Services.ConvexHull;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<WallService>();
 builder.Services.AddSingleton<HoldDiscoveryService>();
 builder.Services.AddSingleton<LogReceiverService>();
+builder.Services.AddSingleton<ConvexHullGeneratorService>();
+builder.Services.AddHostedService<BackgroundColliderWorker>();
 
 var app = builder.Build();
 

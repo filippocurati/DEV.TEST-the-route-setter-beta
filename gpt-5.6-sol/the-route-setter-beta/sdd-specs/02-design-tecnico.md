@@ -106,6 +106,14 @@ Flusso:
 - movimento: `KinematicCharacterController` per move-and-slide;
 - no autostep/snap-to-ground.
 
+### Convenzione spaziale degli asset
+
+Il frontend assume che i modelli GLB rispettino la convenzione `Y-up`, con il fronte arrampicabile della parete rivolto verso `+Z`.
+La camera iniziale viene posizionata sul semiasse `+Z` e orientata verso il centro geometrico della parete.
+
+Il frontend non applica euristiche per determinare automaticamente il fronte.
+Eventuali modelli non conformi devono essere corretti prima dell'importazione.
+
 ## 7. Snap, pre-snap e degeneri (vincolante)
 
 ### 7.1 Pre-snap

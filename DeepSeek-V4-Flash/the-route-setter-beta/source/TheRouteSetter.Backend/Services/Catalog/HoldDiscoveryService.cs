@@ -65,6 +65,14 @@ public class HoldDiscoveryService
     }
 
     /// <summary>
+    /// Restituisce il percorso assoluto della directory holds (utile per il background worker).
+    /// </summary>
+    public string? GetHoldsRootPath()
+    {
+        return Directory.Exists(_holdsDirectory) ? _holdsDirectory : null;
+    }
+
+    /// <summary>
     /// Costruisce il manifest per una singola presa.
     /// </summary>
     private HoldManifest? BuildHoldManifest(string holdDir, string dirName)

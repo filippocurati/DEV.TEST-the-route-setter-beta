@@ -84,6 +84,27 @@ public class LogEntry
 }
 
 /// <summary>
+/// Dati del collider Convex Hull pre-calcolato per una presa.
+/// </summary>
+public class ColliderData
+{
+    /// <summary>
+    /// Hash SHA256 del file GLB sorgente per la verifica di coerenza.
+    /// </summary>
+    public string SourceHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Vertici dell'inviluppo convesso, appiattiti in un array di float (x,y,z,x,y,z,...).
+    /// </summary>
+    public float[] Vertices { get; set; } = Array.Empty<float>();
+
+    /// <summary>
+    /// Indici delle facce dell'inviluppo convesso (opzionale).
+    /// </summary>
+    public int[]? Indices { get; set; }
+}
+
+/// <summary>
 /// Risposta standard per gli errori del backend.
 /// </summary>
 public class ErrorResponse

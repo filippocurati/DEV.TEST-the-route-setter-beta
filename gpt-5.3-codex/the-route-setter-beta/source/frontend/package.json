@@ -16,6 +16,8 @@
     "three": "0.161.0"
   },
   "devDependencies": {
+    "@types/node": "20.12.12",
+    "@types/three": "0.161.2",
     "@playwright/test": "1.44.0",
     "typescript": "5.4.5",
     "vite": "5.2.0",

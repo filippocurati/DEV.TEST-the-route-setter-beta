@@ -5,6 +5,7 @@
 | REQ-ARC-001..004 | 02 §1, §2 | Integration API + architecture checks |
 | REQ-ARC-005..008 | 02 §1, §4, §6 | E2E reload/no persistence + network assertions |
 | REQ-MOD-001..004 | 02 §3, §4 | Unit discovery + integration manifest |
+| REQ-MOD-005 | 02 § Convenzione spaziale degli asset | E2E orientamento iniziale parete |
 | REQ-CAT-001..007 | 02 §4, §8 | E2E catalog/use/remove/details |
 | REQ-SCN-001..004 | 02 §1, §6, §8 | E2E scena e selezione |
 | REQ-FIS-001..013 | 02 §6, §8 | Physics suite headless |
