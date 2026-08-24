@@ -86,7 +86,7 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 - finito per primo in 15 minuti con esito positivo
 - fase completata con successo , in run non si vede più l'indicazione dell'url in ascolto perché tutto spostato su file di log
 
-## FASE 3 - 1° esecuzione
+## FASE 4 - 1° esecuzione
 
 ### deepseek-v4-flash
 
@@ -95,3 +95,30 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 
 ### gpt-5.3-codex 
 - finito con successo con pari tempo rispetto a codex
+
+## FASE 5 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- finito con successo in 14 minuti.
+- la prima esecuzione non era stata completata perché era stato interpretato erronamento di impostare gpt-5-6-sol come modello predefinito di opencode, e questo è stato l'intervento svolto , al secondo giro l'interpretazione è stata corretta
+
+### gpt-5.3-codex 
+- finito con successo dopo 7 minuti
+
+
+## FASE 6 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- comletato con successo in 14 minuti
+- la scala dei modelli GLB però non è conforme e le prese ora vengono visualizzate molto più grandi della parete
+- le prese vengono tolte ed aggiunte correttamente alla scenza, ora si sovrappongono ma le regole di non sovrapposizione sono previste nelle prossime fasi
+- la fase si può considerare correttamente implementata
+
+
+### gpt-5.3-codex 
+- comletato con successo in 18 minuti
+- errore lato client nella visualizzazione della presa e nell'utilizzo in scena, 3 iterazioni al momento non hanno corretto l'errore

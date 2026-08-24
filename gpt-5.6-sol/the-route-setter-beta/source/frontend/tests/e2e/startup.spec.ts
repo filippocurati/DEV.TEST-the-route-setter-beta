@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 test('carica automaticamente parete e TriMesh', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'The Route Setter' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Parete pronta');
+  await expect(page.getByRole('status')).toHaveText('Parete pronta', { timeout: 60_000 });
   await expect(page.locator('[data-scene-canvas]')).toBeVisible();
 
   const scene = await page.evaluate(() => window.__ROUTE_SETTER_SCENE__);
@@ -13,12 +14,27 @@ test('carica automaticamente parete e TriMesh', async ({ page }) => {
   expect(scene?.triMeshIndexCount).toBeGreaterThan(0);
   expect(scene!.triMeshIndexCount % 3).toBe(0);
   expect(scene?.controlsTarget).toEqual(scene?.wallCenter);
+  expect(scene?.physicsReady).toBe(true);
+  expect(scene?.gravity).toEqual([0, 0, 0]);
+  expect(scene?.wallBodyFixed).toBe(true);
+  expect(scene?.wallColliderReady).toBe(true);
+  expect(scene?.characterControllerReady).toBe(true);
+  expect(scene?.characterAutostepEnabled).toBe(false);
+  expect(scene?.characterSnapToGroundEnabled).toBe(false);
 });
 
 test('orbit zoom e pan mantengono un target valido sulla parete', async ({ page }) => {
   test.setTimeout(60_000);
+  const apiRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/')) {
+      apiRequests.push(new URL(request.url()).pathname);
+    }
+  });
   await page.goto('/');
-  await expect(page.getByRole('status')).toHaveText('Parete pronta');
+  await expect(page.getByRole('status')).toHaveText('Parete pronta', { timeout: 60_000 });
+  await expect(page.locator('.hold-card')).toHaveCount(2);
+  const requestsAfterInitialization = [...apiRequests];
   const canvas = page.locator('[data-scene-canvas]');
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -43,13 +59,15 @@ test('orbit zoom e pan mantengono un target valido sulla parete', async ({ page 
     after!.controlsTarget[2] - after!.wallCenter[2],
   );
   expect(targetDistanceFromWall).toBeLessThan(after!.wallMaxDimension);
+  expect(apiRequests).toEqual(requestsAfterInitialization);
 });
 
 test('mantiene la scena utilizzabile su viewport mobile', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
 
-  await expect(page.getByRole('status')).toHaveText('Parete pronta');
+  await expect(page.getByRole('status')).toHaveText('Parete pronta', { timeout: 60_000 });
   const canvas = page.locator('[data-scene-canvas]');
   await expect(canvas).toBeVisible();
   const box = await canvas.boundingBox();

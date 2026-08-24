@@ -4,14 +4,21 @@ import {
   Box3,
   Color,
   DirectionalLight,
+  Group,
   MathUtils,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { fetchHoldCollider, type HoldManifest } from '../api/holdApi';
+import { loadHoldModel, type HoldModelResource } from '../holds/holdResources';
+import { PhysicsWorld } from '../physics/physicsWorld';
+import type { KinematicPhysicsObject } from '../physics/physicsWorld';
 import { loadWall } from './wallLoader';
 
 /** Riferimenti della scena esposti esclusivamente per diagnostica e test E2E. */
@@ -23,6 +30,30 @@ export interface WallSceneDebug {
   readonly controlsTarget: readonly number[];
   readonly wallCenter: readonly number[];
   readonly wallMaxDimension: number;
+  readonly physicsReady: boolean;
+  readonly gravity: readonly number[];
+  readonly wallBodyFixed: boolean;
+  readonly wallColliderReady: boolean;
+  readonly characterControllerReady: boolean;
+  readonly characterAutostepEnabled: boolean;
+  readonly characterSnapToGroundEnabled: boolean;
+  readonly holdInstanceIds: readonly string[];
+}
+
+/** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
+export interface WallSceneController {
+  addHold(hold: HoldManifest): Promise<void>;
+  removeHold(id: string): boolean;
+  hasHold(id: string): boolean;
+  activeHoldId(): string | null;
+}
+
+interface HoldSceneInstance {
+  readonly id: string;
+  readonly model: HoldModelResource;
+  readonly object: Group;
+  readonly physics: KinematicPhysicsObject;
+  readonly unbind: () => void;
 }
 
 declare global {
@@ -32,7 +63,10 @@ declare global {
 }
 
 /** Crea la scena, carica automaticamente la parete e avvia il rendering interattivo. */
-export async function createWallScene(container: HTMLElement, status: HTMLElement): Promise<void> {
+export async function createWallScene(
+  container: HTMLElement,
+  status: HTMLElement,
+): Promise<WallSceneController> {
   const scene = new Scene();
   scene.background = new Color(0x101713);
 
@@ -60,6 +94,10 @@ export async function createWallScene(container: HTMLElement, status: HTMLElemen
 
   const wall = await loadWall();
   scene.add(wall.object);
+  status.textContent = 'Inizializzazione fisica...';
+  const physics = await PhysicsWorld.create(wall.triMesh);
+  const holdInstances = new Map<string, HoldSceneInstance>();
+  let activeHoldId: string | null = null;
   frameWall(camera, controls, wall.bounds, wall.center, wall.size);
   status.textContent = 'Parete pronta';
   status.dataset.state = 'ready';
@@ -73,6 +111,14 @@ export async function createWallScene(container: HTMLElement, status: HTMLElemen
       controlsTarget: controls.target.toArray(),
       wallCenter: wall.center.toArray(),
       wallMaxDimension: Math.max(wall.size.x, wall.size.y, wall.size.z),
+      physicsReady: true,
+      gravity: [physics.world.gravity.x, physics.world.gravity.y, physics.world.gravity.z],
+      wallBodyFixed: physics.wallBody.isFixed(),
+      wallColliderReady: physics.wallCollider.isValid(),
+      characterControllerReady: true,
+      characterAutostepEnabled: physics.characterController.autostepEnabled(),
+      characterSnapToGroundEnabled: physics.characterController.snapToGroundEnabled(),
+      holdInstanceIds: [...holdInstances.keys()],
     };
   };
   const render = (): void => {
@@ -93,6 +139,69 @@ export async function createWallScene(container: HTMLElement, status: HTMLElemen
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
   resize();
+
+  return {
+    addHold: async (hold) => {
+      if (holdInstances.has(hold.id)) {
+        throw new Error('La presa e gia presente nella scena.');
+      }
+      if (!hold.colliderUrl || hold.colliderStatus !== 'Ready') {
+        throw new Error('Il collider della presa non e ancora disponibile.');
+      }
+
+      const model = await loadHoldModel(hold);
+      let stagedObject: Group | undefined;
+      try {
+        const colliderDocument = await fetchHoldCollider(hold.colliderUrl);
+        const collider = RAPIER.ColliderDesc.convexMesh(
+          new Float32Array(colliderDocument.vertices),
+          new Uint32Array(colliderDocument.indices),
+        );
+        if (!collider) {
+          throw new Error('Il collider della presa non e valido.');
+        }
+
+        const object = model.createInstance();
+        stagedObject = object;
+        const insertionPosition = wall.center.clone().add(new Vector3(0, 0, Math.max(wall.size.z, 1) * 0.75));
+        object.position.copy(insertionPosition);
+        object.updateMatrix();
+        scene.add(object);
+        const physicsObject = physics.createKinematicObject(
+          collider,
+          insertionPosition,
+          new Quaternion(),
+        );
+        const unbind = physics.bindRenderingObject(physicsObject.body, object);
+        holdInstances.set(hold.id, { id: hold.id, model, object, physics: physicsObject, unbind });
+        activeHoldId = hold.id;
+        physics.step();
+        render();
+      } catch (error) {
+        stagedObject?.removeFromParent();
+        model.dispose();
+        throw error;
+      }
+    },
+    removeHold: (id) => {
+      const instance = holdInstances.get(id);
+      if (!instance) {
+        return false;
+      }
+      instance.unbind();
+      physics.removeKinematicObject(instance.physics);
+      instance.object.removeFromParent();
+      instance.model.dispose();
+      holdInstances.delete(id);
+      if (activeHoldId === id) {
+        activeHoldId = [...holdInstances.keys()].at(-1) ?? null;
+      }
+      render();
+      return true;
+    },
+    hasHold: (id) => holdInstances.has(id),
+    activeHoldId: () => activeHoldId,
+  };
 }
 
 /** Posiziona camera e target in funzione del bounding box reale della parete. */
