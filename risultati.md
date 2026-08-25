@@ -123,9 +123,10 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 - comletato con successo in 18 minuti
 - errore lato client nella visualizzazione della presa e nell'utilizzo in scena, 3 iterazioni al momento non hanno corretto l'errore
 - numerose iterazioni non hanno ancora risolto l'errore, quindi al momento l'elaborazione è ferma qui
+- fase sbloccata, l'aggiunta della presa è corretta, la visualizzazione del modale di dettaglio ora avviene con un'animazione che fa roteare la presa senza che l'utente la possa muovere, ma al momento la tengo così
 
 
-## FASE 6 - 1° esecuzione
+## FASE 7 - 1° esecuzione
 
 ### deepseek-v4-flash
 

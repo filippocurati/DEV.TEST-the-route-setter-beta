@@ -92,6 +92,7 @@ let detailsScene: THREE.Scene | null = null;
 let detailsCamera: THREE.PerspectiveCamera | null = null;
 let detailsModel: THREE.Object3D | null = null;
 let detailsAnimationHandle = 0;
+let detailsResizeObserver: ResizeObserver | null = null;
 
 let holdsCatalogFetchCount = 0;
 let holdModelUrlFetchCount = 0;
@@ -296,8 +297,8 @@ async function openDetailsModal(holdId: string): Promise<void> {
     throw new Error(`Hold non trovata: ${holdId}`);
   }
 
-  const modelUrl = await ensureHoldModelUrl(holdId);
-  if (!modelUrl) {
+  const template = await ensureHoldTemplateLoaded(holdId);
+  if (!template) {
     throw new Error(`Dettagli non disponibili per ${holdId}`);
   }
 
@@ -311,20 +312,33 @@ async function openDetailsModal(holdId: string): Promise<void> {
   detailsCamera.position.set(0, 0.3, 1.2);
 
   detailsRenderer = new THREE.WebGLRenderer({ antialias: true });
-  detailsRenderer.setSize(requiredDetailsCanvas.clientWidth, requiredDetailsCanvas.clientHeight, false);
+  detailsRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   requiredDetailsCanvas.appendChild(detailsRenderer.domElement);
+
+  resizeDetailsViewport();
+  detailsResizeObserver = new ResizeObserver(() => {
+    resizeDetailsViewport();
+  });
+  detailsResizeObserver.observe(requiredDetailsCanvas);
 
   detailsScene.add(new THREE.AmbientLight(0xffffff, 0.8));
   const key = new THREE.DirectionalLight(0xffffff, 0.8);
   key.position.set(1.5, 2, 1.2);
   detailsScene.add(key);
 
-  detailsModel = await loadHoldSceneWithFallback(runtime, modelUrl);
+  detailsModel = createDetailsPreviewModel(template);
   detailsScene.add(detailsModel);
   detailsLoadCount += 1;
   updateRuntimeMetrics();
 
-  fitCameraOnObject(detailsCamera, detailsModel);
+  const modelBox = new THREE.Box3().setFromObject(detailsModel);
+  const modelSize = modelBox.getSize(new THREE.Vector3());
+  requiredSceneMount.dataset.detailsModelSize = Math.max(modelSize.x, modelSize.y, modelSize.z).toFixed(6);
+
+  const fitMetrics = fitCameraOnObject(detailsCamera, detailsModel);
+  requiredSceneMount.dataset.detailsCameraNear = fitMetrics.near.toFixed(6);
+  requiredSceneMount.dataset.detailsCameraFar = fitMetrics.far.toFixed(6);
+  requiredSceneMount.dataset.detailsInFrustum = isObjectVisibleInCameraFrustum(detailsModel, detailsCamera) ? 'true' : 'false';
 
   const render = () => {
     if (!detailsScene || !detailsRenderer || !detailsCamera || !detailsModel) {
@@ -348,10 +362,7 @@ function closeDetailsModal(): void {
     detailsAnimationHandle = 0;
   }
 
-  if (detailsModel) {
-    disposeObject3D(detailsModel);
-    detailsModel = null;
-  }
+  detailsModel = null;
 
   if (detailsRenderer) {
     detailsRenderer.dispose();
@@ -361,11 +372,20 @@ function closeDetailsModal(): void {
     detailsRenderer = null;
   }
 
+  if (detailsResizeObserver) {
+    detailsResizeObserver.disconnect();
+    detailsResizeObserver = null;
+  }
+
   detailsScene = null;
   detailsCamera = null;
 }
 
-function fitCameraOnObject(camera: THREE.PerspectiveCamera, object: THREE.Object3D): void {
+function fitCameraOnObject(
+  camera: THREE.PerspectiveCamera,
+  object: THREE.Object3D
+): { near: number; far: number } {
+  object.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(object);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -373,22 +393,41 @@ function fitCameraOnObject(camera: THREE.PerspectiveCamera, object: THREE.Object
   const distance = Math.max(0.8, (maxDimension * 1.6) / Math.tan((Math.PI * camera.fov) / 360));
 
   camera.position.set(center.x, center.y + size.y * 0.1, center.z + distance);
+  camera.near = Math.max(0.001, distance / 1000);
+  camera.far = Math.max(200, distance * 12 + maxDimension * 4);
+  camera.updateProjectionMatrix();
   camera.lookAt(center);
+
+  return {
+    near: camera.near,
+    far: camera.far
+  };
 }
 
-function disposeObject3D(object: THREE.Object3D): void {
-  object.traverse((node) => {
-    if (node instanceof THREE.Mesh) {
-      node.geometry.dispose();
-      if (Array.isArray(node.material)) {
-        for (const material of node.material) {
-          material.dispose();
-        }
-      } else {
-        node.material.dispose();
-      }
-    }
-  });
+function createDetailsPreviewModel(template: THREE.Object3D): THREE.Object3D {
+  const cloned = template.clone(true);
+  cloned.updateWorldMatrix(true, true);
+
+  const box = new THREE.Box3().setFromObject(cloned);
+  if (box.isEmpty()) {
+    return cloned;
+  }
+
+  const center = box.getCenter(new THREE.Vector3());
+  const wrapper = new THREE.Group();
+  wrapper.add(cloned);
+  cloned.position.sub(center);
+
+  return wrapper;
+}
+
+function isObjectVisibleInCameraFrustum(object: THREE.Object3D, camera: THREE.PerspectiveCamera): boolean {
+  camera.updateMatrixWorld(true);
+  const projectionMatrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(projectionMatrix);
+
+  const box = new THREE.Box3().setFromObject(object);
+  return frustum.intersectsBox(box);
 }
 
 function toClientAssetUrl(relativeOrAbsoluteUrl: string | null, baseUrl: string): string | null {
@@ -472,4 +511,17 @@ function updateRuntimeMetrics(): void {
   requiredSceneMount.dataset.modelUrlFetches = holdModelUrlFetchCount.toString();
   requiredSceneMount.dataset.templateLoads = holdTemplateLoadCount.toString();
   requiredSceneMount.dataset.detailsLoads = detailsLoadCount.toString();
+}
+
+function resizeDetailsViewport(): void {
+  if (!detailsRenderer || !detailsCamera) {
+    return;
+  }
+
+  const width = Math.max(320, requiredDetailsCanvas.clientWidth);
+  const height = Math.max(220, requiredDetailsCanvas.clientHeight);
+
+  detailsRenderer.setSize(width, height, false);
+  detailsCamera.aspect = width / height;
+  detailsCamera.updateProjectionMatrix();
 }
