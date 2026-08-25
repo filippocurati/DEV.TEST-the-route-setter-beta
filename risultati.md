@@ -133,7 +133,11 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 ### gpt-5.6-sol
 - comletato con successo in 77 minuti, non è chiaro il motivo di così tanto tempo ma si è conclusa da sola senza necessità di interruzioni
 - implementazione completa e corretta, sono state evidenziate mancanze ma a livello di specifiche
-
+#### Dopo review specifiche
+- rilevata incongruità per posiazionamento della presa a 2 metri dalla parete, questo potrebbe rompere il collidere in quanto la presa potrebbe compenetrare la parete in visualizzazione 
+- implementate modifiche con successo in 36 minuti, però dopo la review non vengono più aggiunte prese alla scena e viene dato un errore "Posizione iniziale della presa non valida"
+- dopo ultima modifica per revisione delle specifiche per gestire il movimento in alto e basso, la compenetrazione non viene più bloccata quando una presa viene spostata in alto o in basso, ma questo potrebbe essere un compito delle prossime fasi
 
 
 ### gpt-5.3-codex 
+- implementata con successo in 17 minuti dopo la modifica alle specifiche, non ha rilevato però incongruità con le nuove specifiche come gpt-sol

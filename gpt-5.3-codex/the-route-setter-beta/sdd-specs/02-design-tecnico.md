@@ -114,10 +114,44 @@ La camera iniziale viene posizionata sul semiasse `+Z` e orientata verso il cent
 Il frontend non applica euristiche per determinare automaticamente il fronte.
 Eventuali modelli non conformi devono essere corretti prima dell'importazione.
 
+### Traslazione normale e stato di aggancio
+
+Ogni hold ha due stati: `pre-snap` e `post-snap`.
+
+- In `pre-snap`, i comandi `SHIFT+Freccia Su` e `SHIFT+Freccia Giu` traslano la hold lungo la normale locale della parete (`1 cm/click` + continuo a pressione), nel rispetto dei vincoli anti-collisione.
+- In `post-snap`, il comando avanti non ha effetto.
+- In `post-snap`, il comando indietro provoca sgancio: la hold torna all'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e viene riposizionata a `0.25 m` dalla parete lungo la normale locale.
+
+La distanza dalla parete e misurata lungo la normale locale tra pivot posteriore della hold (punto di contatto) e punto piu vicino della parete.
+
+### Spawn iniziale pre-snap
+
+Il riferimento dello spawn non e il centro volumetrico della parete.
+
+Il frontend:
+1. calcola il centro geometrico del bounding box della parete;
+2. proietta tale punto sulla superficie frontale nella direzione `+Z`;
+3. seleziona deterministicamente l'intersezione frontale valida;
+4. definisce il primo candidato con offset `2.0 m` lungo `+Z`;
+5. se il candidato e occupato, genera una griglia sul piano parallelo al fronte;
+6. usa come assi della griglia la base locale del piano frontale della parete;
+7. visita i punti della griglia per distanza crescente dal centro e con ordinamento stabile;
+8. utilizza una distanza di `0.30 m` tra i punti;
+9. mantiene per ogni candidato l'offset di `2.0 m` lungo `+Z`;
+10. valida ogni posizione con Rapier rispetto a parete e hold presenti;
+11. seleziona il primo candidato non compenetrante.
+
+L'inserimento viene annullato soltanto quando nessun candidato valido e disponibile nel dominio di ricerca.
+La ricerca e limitata all'area frontale proiettata della parete (bounding frontale) estesa da un margine configurabile.
+
+A parita di distanza dal centro, l'ordine dei candidati deve essere deterministico: alto, destra, basso, sinistra, quindi diagonali in senso orario.
+
 ## 7. Snap, pre-snap e degeneri (vincolante)
 
 ### 7.1 Pre-snap
 - all'inserimento, hold in stato non agganciato;
+- spawn iniziale tramite ricerca deterministica: primo candidato frontale centrale con offset `2.0 m`, fallback su griglia frontale con passo `0.30 m` e selezione del primo candidato non compenetrante;
+- inserimento annullato solo dopo esaurimento candidati nel dominio di ricerca (bounding frontale + margine configurabile);
 - query locale verso parete per trovare contatto candidato.
 
 ### 7.2 Snap

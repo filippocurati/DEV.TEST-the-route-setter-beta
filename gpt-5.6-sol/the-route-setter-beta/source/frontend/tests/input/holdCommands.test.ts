@@ -20,6 +20,21 @@ describe('comandi hold', () => {
     expect(commandForKeyboardCode('ArrowRight')).toBe('move-right');
     expect(commandForKeyboardCode('KeyQ')).toBe('rotate-counterclockwise');
     expect(commandForKeyboardCode('KeyE')).toBe('rotate-clockwise');
+    expect(commandForKeyboardCode('ArrowUp', true)).toBe('move-forward');
+    expect(commandForKeyboardCode('ArrowDown', true)).toBe('move-backward');
+  });
+
+  it('ripete anche avanti e indietro durante la pressione continua', () => {
+    vi.useFakeTimers();
+    const execute = vi.fn();
+    const controller = new ContinuousCommandController();
+
+    controller.start('key:Shift+ArrowUp', 'move-forward', execute);
+    vi.advanceTimersByTime(500);
+    controller.stop('key:Shift+ArrowUp');
+
+    expect(execute.mock.calls.length).toBeGreaterThan(1);
+    expect(execute).toHaveBeenCalledWith('move-forward');
   });
 
   it('applica un solo passo per una pressione breve', () => {

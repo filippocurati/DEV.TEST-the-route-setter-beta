@@ -84,7 +84,45 @@ body {
   display: grid;
   grid-template-columns: 320px 1fr;
   min-height: 420px;
-  height: calc(100dvh - 120px);
+  height: calc(100dvh - 188px);
+}
+
+.command-panel {
+  border-bottom: 1px solid #e2e9f0;
+  padding: 10px 14px;
+  background: #f8fbfe;
+  display: grid;
+  gap: 8px;
+}
+
+.command-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.command-group span {
+  font-size: 0.8rem;
+  color: #3f5368;
+  margin-right: 6px;
+}
+
+.command-group button {
+  border: 1px solid #b7c7d7;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #20364c;
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.shortcut-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #506175;
 }
 
 .catalog-panel {
@@ -233,7 +271,7 @@ body {
   .workspace-layout {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(220px, 38dvh) 1fr;
-    height: calc(100dvh - 142px);
+    height: calc(100dvh - 232px);
   }
 
   .catalog-panel {

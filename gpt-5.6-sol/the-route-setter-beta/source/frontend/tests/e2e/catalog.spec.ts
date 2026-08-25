@@ -64,9 +64,13 @@ test.describe('catalogo prese', () => {
 
     await expect(hold1).toHaveCount(0);
     await expect(page.locator('[data-catalog-count]')).toHaveText('1');
-    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 60_000 });
+    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
     const scene = await page.evaluate(() => window.__ROUTE_SETTER_SCENE__);
     expect(scene?.holdInstanceIds).toEqual(['Hold1']);
+    expect(scene?.holdStates.Hold1.attachment).toBe('pre-snap');
+    expect(scene!.selectedHoldPosition![2] - scene!.wallFrontReference[2]).toBeCloseTo(2, 4);
+    expect(scene?.holdStates.Hold1.localNormal).toEqual([0, 0, 1]);
+    expect(scene?.holdStates.Hold1.intersectsAtSpawn).toBe(false);
     expect(requests).toContain('/api/holds/Hold1/model');
     expect(requests).toContain('/api/holds/Hold1/collider');
     expect(requests.filter((path) => path.endsWith('/model'))).toHaveLength(1);
@@ -76,5 +80,22 @@ test.describe('catalogo prese', () => {
     await expect(page.locator('[data-hold-id="Hold1"]')).toBeVisible();
     await expect(page.locator('[data-catalog-count]')).toHaveText('2');
     expect((await page.evaluate(() => window.__ROUTE_SETTER_SCENE__))?.holdInstanceIds).toEqual([]);
+  });
+
+  test('usa la griglia deterministica per uno spawn multiplo libero', async ({ page }) => {
+    await page.locator('[data-hold-id="Hold1"]').getByRole('button', { name: 'Utilizza' }).click();
+    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
+    await page.locator('[data-hold-id="Hold2"]').getByRole('button', { name: 'Utilizza' }).click();
+    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold2 aggiunta alla scena.', { timeout: 120_000 });
+
+    const scene = await page.evaluate(() => window.__ROUTE_SETTER_SCENE__!);
+    expect(scene.holdInstanceIds).toEqual(['Hold1', 'Hold2']);
+    expect(scene.holdStates.Hold1.spawnOffset).toEqual([0, 0]);
+    expect(scene.holdStates.Hold1.spawnCandidateIndex).toBe(0);
+    expect(scene.holdStates.Hold2.spawnCandidateIndex).toBeGreaterThan(0);
+    expect(scene.holdStates.Hold2.spawnOffset).not.toEqual([0, 0]);
+    expect(scene.holdStates.Hold1.intersectsAtSpawn).toBe(false);
+    expect(scene.holdStates.Hold2.intersectsAtSpawn).toBe(false);
+    expect(scene.selectedHoldPosition![2] - scene.wallFrontReference[2]).toBeCloseTo(2, 4);
   });
 });

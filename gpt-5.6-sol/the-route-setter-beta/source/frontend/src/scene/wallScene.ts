@@ -29,7 +29,14 @@ import {
 } from '../input/holdCommands';
 import { PhysicsWorld } from '../physics/physicsWorld';
 import type { KinematicPhysicsObject } from '../physics/physicsWorld';
+import { limitMovementToFrontSurface } from '../physics/normalMovement';
 import { loadWall } from './wallLoader';
+import {
+  createSpawnCandidateOffsets,
+  findFirstAvailableSpawn,
+  SPAWN_GRID_MARGIN_METERS,
+  SPAWN_GRID_STEP_METERS,
+} from './spawnCandidates';
 
 /** Riferimenti della scena esposti esclusivamente per diagnostica e test E2E. */
 export interface WallSceneDebug {
@@ -55,6 +62,15 @@ export interface WallSceneDebug {
   readonly holdScreenPositions: Readonly<Record<string, readonly number[]>>;
   readonly rigidBodyCount: number;
   readonly colliderCount: number;
+  readonly holdStates: Readonly<Record<string, {
+    readonly attachment: 'pre-snap' | 'post-snap';
+    readonly distanceFromWallCenter: number;
+    readonly localNormal: readonly number[];
+    readonly intersectsAtSpawn: boolean;
+    readonly spawnOffset: readonly number[];
+    readonly spawnCandidateIndex: number;
+  }>>;
+  readonly wallFrontReference: readonly number[];
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -75,6 +91,13 @@ interface HoldSceneInstance {
   readonly unbind: () => void;
   readonly originalMaterials: ReadonlyMap<Mesh, Material | Material[]>;
   readonly highlightedMaterials: Map<Mesh, Material | Material[]>;
+  readonly attachment: 'pre-snap' | 'post-snap';
+  readonly localNormal: Vector3;
+  readonly initialRotation: Quaternion;
+  readonly intersectsAtSpawn: boolean;
+  readonly pickPointLocal: Vector3;
+  readonly spawnOffset: Vector2;
+  readonly spawnCandidateIndex: number;
 }
 
 declare global {
@@ -115,6 +138,7 @@ export async function createWallScene(
 
   const wall = await loadWall();
   scene.add(wall.object);
+  const frontReference = findFrontReference(wall.object, wall.center, wall.bounds);
   status.textContent = 'Inizializzazione fisica...';
   const physics = await PhysicsWorld.create(wall.triMesh);
   const holdInstances = new Map<string, HoldSceneInstance>();
@@ -153,15 +177,32 @@ export async function createWallScene(
         ? holdInstances.get(selectedHoldId)?.physics.body.isValid() ?? false
         : false,
       holdScreenPositions: Object.fromEntries(
-        [...holdInstances].map(([id, instance]) => [id, projectPickPoint(instance.object, camera)]),
+        [...holdInstances].map(([id, instance]) => [id, projectCachedPickPoint(instance, camera)]),
       ),
       rigidBodyCount: physics.world.bodies.len(),
       colliderCount: physics.world.colliders.len(),
+      holdStates: Object.fromEntries(
+        [...holdInstances].map(([id, instance]) => [id, {
+          attachment: instance.attachment,
+          distanceFromWallCenter: instance.object.position.distanceTo(wall.center),
+          localNormal: instance.localNormal.toArray(),
+          intersectsAtSpawn: instance.intersectsAtSpawn,
+          spawnOffset: instance.spawnOffset.toArray(),
+          spawnCandidateIndex: instance.spawnCandidateIndex,
+        }]),
+      ),
+      wallFrontReference: frontReference.toArray(),
     };
   };
+  let renderPending = false;
   const render = (): void => {
     updateDebugState();
-    renderer.render(scene, camera);
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => {
+      renderer.render(scene, camera);
+      renderPending = false;
+    });
   };
   controls.addEventListener('change', render);
   updateDebugState();
@@ -225,6 +266,21 @@ export async function createWallScene(
       );
       const next = new Quaternion(current.x, current.y, current.z, current.w).multiply(delta).normalize();
       physics.setKinematicTransform(selected.physics, selected.physics.body.translation(), next);
+    } else if (command === 'move-forward' || command === 'move-backward') {
+      const sign = command === 'move-forward' ? -1 : 1;
+      const desiredDistance = TRANSLATION_STEP_METERS * sign;
+      const current = selected.physics.body.translation();
+      const wallLimitedDistance = limitMovementToFrontSurface(
+        new Vector3(current.x, current.y, current.z),
+        frontReference,
+        selected.localNormal,
+        desiredDistance,
+      );
+      const direction = selected.localNormal.clone().multiplyScalar(wallLimitedDistance);
+      physics.movePreSnapWithCollisions(
+        selected.physics,
+        direction,
+      );
     } else {
       const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
       const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
@@ -273,23 +329,40 @@ export async function createWallScene(
         const object = model.createInstance();
         stagedObject = object;
         object.traverse((child) => { child.userData.holdModelId = hold.id; });
-        object.updateWorldMatrix(true, true);
-        const modelCenter = new Box3().setFromObject(object).getCenter(new Vector3());
-        const insertionTarget = wall.center.clone().add(new Vector3(
-          holdInstances.size * Math.max(wall.size.x, 1) * 0.08,
-          0,
-          Math.max(wall.size.z, 1) * 0.75,
-        ));
-        const insertionPosition = insertionTarget.sub(modelCenter);
+        const localNormal = new Vector3(0, 0, 1);
+        const centralSpawn = frontReference.clone().add(localNormal.clone().multiplyScalar(2));
+        const physicsObject = physics.createKinematicObject(
+          collider,
+          centralSpawn,
+          new Quaternion(),
+        );
+        const candidates = createSpawnCandidateOffsets({
+          halfWidth: wall.size.x / 2,
+          halfHeight: wall.size.y / 2,
+          step: SPAWN_GRID_STEP_METERS,
+          margin: SPAWN_GRID_MARGIN_METERS,
+        });
+        let insertionPosition: Vector3 | undefined;
+        const spawnResult = findFirstAvailableSpawn(candidates, (candidateOffset) => {
+          const candidate = centralSpawn.clone().add(new Vector3(candidateOffset.x, candidateOffset.y, 0));
+          physics.setKinematicTransform(physicsObject, candidate, physicsObject.body.rotation());
+          if (!physics.hasIntersections(physicsObject)) {
+            insertionPosition = candidate;
+            return true;
+          }
+          return false;
+        });
+        if (!insertionPosition || !spawnResult) {
+          physics.removeKinematicObject(physicsObject);
+          throw new Error('Nessuna posizione iniziale libera disponibile.');
+        }
         object.position.copy(insertionPosition);
         object.updateMatrix();
         scene.add(object);
-        const physicsObject = physics.createKinematicObject(
-          collider,
-          insertionPosition,
-          new Quaternion(),
-        );
         const unbind = physics.bindRenderingObject(physicsObject.body, object);
+        const intersectsAtSpawn = false;
+        const pickPointWorld = findPickPointWorld(object, camera);
+        const pickPointLocal = object.worldToLocal(pickPointWorld.clone());
         holdInstances.set(hold.id, {
           id: hold.id,
           model,
@@ -298,6 +371,13 @@ export async function createWallScene(
           unbind,
           originalMaterials: captureMaterials(object),
           highlightedMaterials: new Map(),
+          attachment: 'pre-snap',
+          localNormal,
+          initialRotation: object.quaternion.clone(),
+          intersectsAtSpawn,
+          pickPointLocal,
+          spawnOffset: spawnResult.candidate,
+          spawnCandidateIndex: spawnResult.index,
         });
         setSelection(hold.id);
         physics.step();
@@ -333,6 +413,22 @@ export async function createWallScene(
   };
 }
 
+/** Determina il punto frontale proiettando il centro geometrico verso la superficie lungo -Z. */
+function findFrontReference(root: Group, center: Vector3, bounds: Box3): Vector3 {
+  const depth = Math.max(bounds.max.z - bounds.min.z, 1);
+  const raycaster = new Raycaster(
+    new Vector3(center.x, center.y, bounds.max.z + depth),
+    new Vector3(0, 0, -1),
+  );
+  const intersections = raycaster.intersectObject(root, true)
+    .filter((intersection) => Number.isFinite(intersection.point.z))
+    .sort((left, right) => right.point.z - left.point.z);
+  if (intersections.length === 0) {
+    throw new Error('Punto frontale della parete non determinabile.');
+  }
+  return intersections[0].point.clone();
+}
+
 /** Risale dalla mesh colpita fino alla radice istanza annotata. */
 function findHoldId(object: Object3D): string | null {
   let current: Object3D | null = object;
@@ -345,8 +441,8 @@ function findHoldId(object: Object3D): string | null {
   return null;
 }
 
-/** Proietta il baricentro di un triangolo reale per consentire verifiche raycast affidabili. */
-function projectPickPoint(root: Group, camera: PerspectiveCamera): readonly number[] {
+/** Individua una volta il baricentro di un triangolo reale front-facing. */
+function findPickPointWorld(root: Group, camera: PerspectiveCamera): Vector3 {
   let point: Vector3 | undefined;
   root.updateWorldMatrix(true, true);
   root.traverse((object) => {
@@ -374,7 +470,13 @@ function projectPickPoint(root: Group, camera: PerspectiveCamera): readonly numb
       }
     }
   });
-  const projected = (point ?? new Box3().setFromObject(root).getCenter(new Vector3())).project(camera);
+  return point ?? new Box3().setFromObject(root).getCenter(new Vector3());
+}
+
+/** Proietta il punto di picking memorizzato senza scandire nuovamente la geometria. */
+function projectCachedPickPoint(instance: HoldSceneInstance, camera: PerspectiveCamera): readonly number[] {
+  instance.object.updateWorldMatrix(true, false);
+  const projected = instance.pickPointLocal.clone().applyMatrix4(instance.object.matrixWorld).project(camera);
   return [projected.x, projected.y];
 }
 

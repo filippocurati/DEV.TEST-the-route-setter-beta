@@ -8,8 +8,10 @@
 | REQ-MOD-005 | 02 § Convenzione spaziale degli asset | E2E orientamento iniziale parete |
 | REQ-CAT-001..007 | 02 §4, §8 | E2E catalog/use/remove/details |
 | REQ-SCN-001..004 | 02 §1, §6, §8 | E2E scena e selezione |
+| REQ-SCN-005 | 02 § Spawn iniziale pre-snap, §7.1 | Unit griglia deterministica + E2E spawn multiplo senza compenetrazione |
 | REQ-FIS-001..013 | 02 §6, §8 | Physics suite headless |
 | REQ-FIS-014 | 02 §7 | Snap/degenerate tests dedicati |
+| REQ-FIS-015 | 02 §8, § Traslazione normale e stato di aggancio | Physics headless + E2E avanti/indietro |
 | REQ-HUL-001..006 | 02 §5 | Hull tests xUnit + integration |
 | REQ-HUL-007 | 02 §5 | Build guard + test suite hull |
 | REQ-UI-001..004 | 02 §8 | E2E UI/input |

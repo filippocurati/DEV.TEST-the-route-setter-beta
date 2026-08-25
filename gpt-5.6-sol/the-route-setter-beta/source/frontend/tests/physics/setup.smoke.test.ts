@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Quaternion, Vector3 } from 'three';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { PhysicsWorld } from '../../src/physics/physicsWorld';
+import { limitMovementToFrontSurface } from '../../src/physics/normalMovement';
 
 describe('suite fisica headless', () => {
   beforeAll(async () => {
@@ -74,6 +75,36 @@ describe('suite fisica headless', () => {
     physics.step();
 
     expect(object.body.translation().x).toBeCloseTo(0.01);
+    physics.dispose();
+  });
+
+  it('consente movimento libero e limita la compenetrazione con il fronte parete', () => {
+    const front = new Vector3(0, 0, 0);
+    const normal = new Vector3(0, 0, 1);
+
+    expect(limitMovementToFrontSurface(new Vector3(0, 0, 2), front, normal, -0.01)).toBe(-0.01);
+    expect(limitMovementToFrontSurface(new Vector3(0, 0, 0.005), front, normal, -0.01)).toBeCloseTo(-0.004);
+    expect(limitMovementToFrontSurface(new Vector3(0, 0, 0.001), front, normal, -0.01)).toBe(0);
+    expect(limitMovementToFrontSurface(new Vector3(0, 0, 0.001), front, normal, 0.01)).toBe(0.01);
+  });
+
+  it('blocca avanti contro un altro collider hold', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 1),
+      new Quaternion(),
+    );
+    physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 0.805),
+      new Quaternion(),
+    );
+    physics.world.updateSceneQueries();
+
+    const movement = physics.movePreSnapWithCollisions(moving, { x: 0, y: 0, z: -0.01 });
+
+    expect(movement.z).toBeGreaterThanOrEqual(-0.005);
     physics.dispose();
   });
 

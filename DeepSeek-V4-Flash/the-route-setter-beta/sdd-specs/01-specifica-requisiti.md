@@ -94,6 +94,19 @@ GLB obbligatorio; texture/asset opzionali.
 **REQ-SCN-004 - Parete auto-load.**
 - Criteri: parete visibile all'avvio senza input utente.
 
+**REQ-SCN-005 - Posizionamento iniziale hold in stato pre-snap.**
+- All'aggiunta in scena, la hold deve essere posta in stato `pre-snap`.
+- Il sistema deve individuare il punto di riferimento frontale della parete lungo la direzione globale `+Z`, in corrispondenza del centro geometrico proiettato sul fronte.
+- Il primo punto candidato deve essere posto a `2.0 m` dal punto frontale, verso l'esterno lungo `+Z`.
+- Se il punto candidato e occupato o genera compenetrazione, il sistema deve cercare una posizione libera mediante una griglia deterministica sul piano parallelo al fronte della parete.
+- La ricerca deve partire dal centro e procedere per distanza crescente, con ordinamento stabile, mantenendo sempre l'offset di `2.0 m` lungo `+Z`.
+- La distanza tra i punti della griglia deve essere di `0.30 m`.
+- Gli assi della griglia devono essere definiti sul piano locale frontale della parete.
+- La ricerca su griglia deve essere limitata all'area frontale proiettata della parete (bounding frontale) estesa da un margine configurabile.
+- Ogni posizione candidata deve essere validata tramite Rapier rispetto alla parete e alle hold gia presenti.
+- L'inserimento deve essere annullato soltanto se nessuna posizione valida e disponibile dopo esaurimento deterministico di tutti i candidati nel dominio di ricerca.
+- Criteri: la hold compare in una posizione pre-snap libera, non compenetra, non viene agganciata automaticamente e piu hold possono essere aggiunte contemporaneamente.
+
 ## FIS - Fisica, snap, movimento
 
 **REQ-FIS-001 - Sistema unita.**
@@ -115,8 +128,8 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 **REQ-FIS-006 - Snap 5 cm.**
 - Criteri: snap solo se distanza <= 0.05 m; no snap oltre soglia.
 
-**REQ-FIS-007 - Movimento post-snap.**
-- Criteri: hold resta aderente alla parete e si muove tangenzialmente.
+**REQ-FIS-007 - Movimento post-snap e sgancio controllato.**
+- Criteri: in stato post-snap la hold resta aderente alla parete e i movimenti standard restano tangenziali; il comando avanti non produce effetti; il comando indietro provoca lo sgancio, ripristina l'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e riposiziona automaticamente la hold a distanza `0.25 m` dalla parete lungo la normale locale (`0.05 m` soglia snap + `0.20 m` margine).
 
 **REQ-FIS-008 - Inclinazione non manuale.**
 - Criteri: nessun controllo UI modifica tilt indipendente dalla normale.
@@ -138,6 +151,11 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 
 **REQ-FIS-014 - Pre-snap e degeneri (deterministici).**
 - Criteri: fallback normale (triangolo -> ultima valida -> asse mondo), tie-break stabile su contatti equivalenti, annullamento inserimento se nessuna posizione valida non compenetrante.
+
+**REQ-FIS-015 - Traslazione avanti/indietro lungo normale locale (pre-snap).**
+- In stato pre-snap devono essere disponibili i comandi avanti/indietro lungo la normale locale della parete.
+- Velocita: `1 cm/click` + movimento continuo a pressione.
+- Criteri: durante avanti/indietro devono essere rispettate tutte le regole anti-collisione e anti-compenetrazione; una hold non attraversa parete ne altre hold.
 
 ## HUL - Convex Hull backend
 
@@ -178,7 +196,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: orbit/zoom/pan con target parete.
 
 **REQ-UI-004 - Shortcut tastiera open guidato.**
-- Criteri: mappatura documentata, coerente e non conflittuale quando possibile.
+- Criteri: mappatura documentata, coerente e non conflittuale quando possibile; includere `SHIFT+Freccia Su` per avanti e `SHIFT+Freccia Giu` per indietro.
 
 ## IMG - Generazione immagine
 

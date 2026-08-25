@@ -50,11 +50,15 @@ async function bootstrap(): Promise<void> {
               <button type="button" data-hold-command="move-down" aria-label="Sposta presa giù" title="Giù (Freccia giù)">↓</button>
               <button type="button" data-hold-command="move-right" aria-label="Sposta presa a destra" title="Destra (Freccia destra)">→</button>
             </div>
+            <div class="normal-controls" aria-label="Distanza dalla parete">
+              <button type="button" data-hold-command="move-forward" aria-label="Avvicina presa alla parete" title="Avanti (Shift + Freccia su)">Avanti</button>
+              <button type="button" data-hold-command="move-backward" aria-label="Allontana presa dalla parete" title="Indietro (Shift + Freccia giù)">Indietro</button>
+            </div>
             <div class="rotate-controls" aria-label="Rotazione presa">
               <button type="button" data-hold-command="rotate-counterclockwise" aria-label="Ruota presa in senso antiorario" title="Antiorario (Q)">↶</button>
               <button type="button" data-hold-command="rotate-clockwise" aria-label="Ruota presa in senso orario" title="Orario (E)">↷</button>
             </div>
-            <p>Frecce: sposta 1 cm · Q/E: ruota 1°</p>
+            <p>Frecce: sposta 1 cm · Shift+↑/↓: avanti/indietro · Q/E: ruota 1°</p>
           </div>
         </section>
       </div>
@@ -166,7 +170,7 @@ async function bootstrap(): Promise<void> {
       });
     });
     window.addEventListener('keydown', (event) => {
-      const command = commandForKeyboardCode(event.code);
+      const command = commandForKeyboardCode(event.code, event.shiftKey);
       if (!command || isEditableTarget(event.target)) return;
       event.preventDefault();
       continuousCommands.start(`key:${event.code}`, command, executeCommand);

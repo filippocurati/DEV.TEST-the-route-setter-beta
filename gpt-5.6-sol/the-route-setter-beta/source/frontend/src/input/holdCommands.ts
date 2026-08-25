@@ -4,6 +4,8 @@ export type HoldCommand =
   | 'move-down'
   | 'move-left'
   | 'move-right'
+  | 'move-forward'
+  | 'move-backward'
   | 'rotate-counterclockwise'
   | 'rotate-clockwise';
 
@@ -20,7 +22,9 @@ const keyboardCommands: Readonly<Record<string, HoldCommand>> = {
 };
 
 /** Restituisce il comando associato a uno shortcut fisico di tastiera. */
-export function commandForKeyboardCode(code: string): HoldCommand | undefined {
+export function commandForKeyboardCode(code: string, shiftKey = false): HoldCommand | undefined {
+  if (shiftKey && code === 'ArrowUp') return 'move-forward';
+  if (shiftKey && code === 'ArrowDown') return 'move-backward';
   return keyboardCommands[code];
 }
 

@@ -9,6 +9,7 @@ import {
 
 const ZERO_GRAVITY = Object.freeze({ x: 0, y: 0, z: 0 });
 const CHARACTER_OFFSET_METERS = 0.001;
+const COLLISION_MARGIN_METERS = 0.001;
 
 /** Corpo cinematico predisposto per una futura presa e collegabile alla relativa mesh grafica. */
 export interface KinematicPhysicsObject {
@@ -130,6 +131,66 @@ export class PhysicsWorld {
   synchronizeRendering(): void {
     this.ensureActive();
     synchronizePhysicsToRendering(this.bindings);
+  }
+
+  /**
+   * Trasla una hold pre-snap con shape cast, fermandola prima di parete o altre hold.
+   * Il vettore `desiredDelta` rappresenta l'intero passo richiesto e `toi` ne restituisce la frazione valida.
+   */
+  movePreSnapWithCollisions(
+    object: KinematicPhysicsObject,
+    desiredDelta: RAPIER.Vector,
+  ): RAPIER.Vector {
+    this.ensureActive();
+    const current = object.body.translation();
+    const rotation = object.body.rotation();
+    const requestedLength = Math.hypot(desiredDelta.x, desiredDelta.y, desiredDelta.z);
+    if (requestedLength === 0) return { x: 0, y: 0, z: 0 };
+
+    let firstToi: number | null = null;
+    this.world.forEachCollider((candidate) => {
+      if (candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+      const hit = object.collider.shape.castShape(
+        current,
+        rotation,
+        desiredDelta,
+        candidate.shape,
+        candidate.translation(),
+        candidate.rotation(),
+        { x: 0, y: 0, z: 0 },
+        1,
+        true,
+      );
+      if (hit && (firstToi === null || hit.toi < firstToi)) firstToi = hit.toi;
+    });
+    const marginFraction = COLLISION_MARGIN_METERS / requestedLength;
+    const allowedFraction = firstToi === null ? 1 : Math.max(0, Math.min(1, firstToi - marginFraction));
+    const movement = {
+      x: desiredDelta.x * allowedFraction,
+      y: desiredDelta.y * allowedFraction,
+      z: desiredDelta.z * allowedFraction,
+    };
+    this.setKinematicTransform(object, {
+      x: current.x + movement.x,
+      y: current.y + movement.y,
+      z: current.z + movement.z,
+    }, rotation);
+    return movement;
+  }
+
+  /** Verifica se il collider indicato interseca un altro collider del mondo. */
+  hasIntersections(object: KinematicPhysicsObject): boolean {
+    this.ensureActive();
+    this.world.updateSceneQueries();
+    return this.world.intersectionWithShape(
+      object.body.translation(),
+      object.body.rotation(),
+      object.collider.shape,
+      undefined,
+      undefined,
+      object.collider,
+      object.body,
+    ) !== null;
   }
 
   /** Rimuove corpo e collider associati a un'istanza che lascia la scena. */

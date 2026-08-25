@@ -279,7 +279,7 @@ Implementare ciclo di vita catalogo/scena con lazy loading.
 
 ### Requisiti SDD coperti
 - `REQ-CAT-001..007`
-- `REQ-SCN-001`
+- `REQ-SCN-001`, `REQ-SCN-005`
 - `REQ-UI-001`, `REQ-UI-002`
 
 ### Vincoli e specifiche da garantire
@@ -287,18 +287,28 @@ Implementare ciclo di vita catalogo/scena con lazy loading.
 - cache di manifest+preview per sessione;
 - GLB caricato solo on-demand;
 - separazione modello/istanza;
-- unicita uso hold.
+- unicita uso hold;
+- spawn iniziale hold in stato pre-snap tramite ricerca deterministica:
+  primo candidato frontale centrale con offset `2.0 m`;
+  fallback su griglia frontale con passo `0.30 m`;
+  selezione del primo candidato non compenetrante.
 
 ### Task implementativi
 - UI catalogo e card;
 - modale dettagli con rilascio risorse;
 - flusso utilizzo/rientro catalogo;
-- stato selezione e disponibilita hold.
+- stato selezione e disponibilita hold;
+- posizionamento iniziale coerente della hold in scena (ricerca candidato libero su piano frontale con ordine deterministico).
 
 ### Test da eseguire
 - E2E catalogo/use/details/remove;
 - test cache sessione;
-- test no eager-load GLB.
+- test no eager-load GLB;
+- test spawn iniziale hold: primo candidato centrale a `2.0 m` quando libero;
+- test fallback su griglia frontale con passo `0.30 m` e ordine deterministico candidati;
+- test spawn multiplo senza compenetrazione;
+- test annullamento inserimento solo dopo esaurimento candidati nel dominio (bounding frontale + margine);
+- test assenza snap immediato allo spawn.
 
 ### Definition of Done
 - transizione catalogo<->scena consistente e senza leak evidenti;
@@ -313,30 +323,34 @@ Abilitare selezione hold e comandi input principali.
 
 ### Requisiti SDD coperti
 - `REQ-SCN-002`, `REQ-SCN-003`
-- `REQ-FIS-009`, `REQ-FIS-010`
+- `REQ-FIS-009`, `REQ-FIS-010`, `REQ-FIS-015`
 - `REQ-UI-004`
 
 ### Vincoli e specifiche da garantire
 - click seleziona una sola hold attiva;
 - rimozione elimina istanza e spazio fisico;
 - 1 grado/click, 1 cm/click + continuo a pressione;
-- shortcut coerenti/documentate.
+- comandi avanti/indietro in pre-snap lungo normale locale parete;
+- shortcut coerenti/documentate (`SHIFT+Freccia Su` avanti, `SHIFT+Freccia Giu` indietro);
+- rispetto vincoli anti-collisione/anti-compenetrazione anche su avanti/indietro.
 
 ### Task implementativi
 - raycast selezione;
 - comando rimozione;
 - controlli bottoni+tastiera;
-- gestione pressione continua.
+- gestione pressione continua;
+- integrazione comando avanti/indietro pre-snap lungo normale locale.
 
 ### Test da eseguire
 - E2E selezione/rimozione;
 - input tests click singolo e pressione continua;
-- test equivalenza UI/tastiera.
+- test equivalenza UI/tastiera;
+- test input `SHIFT+Freccia Su/Giu` su pre-snap con anti-compenetrazione.
 
 ### Definition of Done
 - comandi agiscono solo su hold selezionata;
 - rimozione libera spazio e aggiorna catalogo;
-- input coerente e documentato.
+- input coerente e documentato, inclusi comandi avanti/indietro pre-snap.
 
 ---
 
@@ -346,13 +360,15 @@ Abilitare selezione hold e comandi input principali.
 Implementare snap a 5 cm, orientamento normale e regole deterministiche degeneri.
 
 ### Requisiti SDD coperti
-- `REQ-FIS-005..011`, `REQ-FIS-014`
+- `REQ-FIS-005..011`, `REQ-FIS-014`, `REQ-FIS-015`
 - `REQ-TST-008`
 
 ### Vincoli e specifiche da garantire
 - snap entro 0.05 m, non oltre;
 - orientamento su normale del punto di contatto;
 - movimento tangenziale post-snap;
+- in post-snap: avanti = no-op; indietro = sgancio controllato;
+- su sgancio: ripristino orientamento iniziale completo istanza e riposizionamento automatico a `0.25 m` dalla parete lungo normale locale;
 - fallback normale deterministico;
 - tie-break deterministico su contatti equivalenti;
 - annullamento inserimento se nessuna posizione valida non compenetrante.
@@ -360,6 +376,8 @@ Implementare snap a 5 cm, orientamento normale e regole deterministiche degeneri
 ### Task implementativi
 - query contatto pre-snap;
 - applicazione orientamento e vincoli post-snap;
+- gestione no-op avanti in post-snap e sgancio su indietro;
+- ripristino orientamento iniziale completo allo sgancio e offset automatico a `0.25 m`;
 - gestione fallback/tie-break;
 - messaggistica utente non tecnica su inserimento non valido.
 
@@ -370,6 +388,8 @@ Implementare snap a 5 cm, orientamento normale e regole deterministiche degeneri
   - normale corretta;
   - rotazione post-snap attorno normale;
   - movimento tangenziale;
+  - avanti post-snap senza effetti;
+  - indietro post-snap con sgancio, ripristino orientamento e offset `0.25 m`;
   - fallback e tie-break deterministici.
 
 ### Definition of Done
@@ -430,7 +450,8 @@ Chiudere copertura automatica completa e verifiche di regressione.
 
 ### Test da eseguire
 - esecuzione completa suite locale e CI;
-- regressione collisioni e snap.
+- regressione collisioni e snap;
+- regressione ciclo pre-snap/post-snap con avanti/indietro, no-op avanti post-snap e sgancio su indietro.
 
 ### Definition of Done
 - suite completa verde;
