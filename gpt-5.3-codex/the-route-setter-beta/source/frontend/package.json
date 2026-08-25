@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:unit": "vitest run",
-    "test:physics": "vitest run tests/physics",
+    "test:physics": "node node_modules/@playwright/test/cli.js test tests/e2e/physics-foundation.spec.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

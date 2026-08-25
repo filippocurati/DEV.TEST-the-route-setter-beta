@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { PhysicsContext } from '../physics/wallCollider';
-import { createPhysicsContext } from '../physics/wallCollider';
+import type { PhysicsFoundation } from '../physics/wallCollider';
+import { createKinematicVisualMesh, createPhysicsFoundation, stepPhysicsAndSyncVisual } from '../physics/wallCollider';
 
 export interface WallScene {
   renderer: THREE.WebGLRenderer;
@@ -10,7 +10,8 @@ export interface WallScene {
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
   wallRoot: THREE.Object3D;
-  physics: PhysicsContext;
+  physics: PhysicsFoundation;
+  simulationMesh: THREE.Mesh;
   dispose: () => void;
 }
 
@@ -50,7 +51,9 @@ export async function createWallScene(
 
   fitCameraToObject(camera, controls, wallRoot);
 
-  const physics = await createPhysicsContext(wallRoot);
+  const physics = await createPhysicsFoundation(wallRoot);
+  const simulationMesh = createKinematicVisualMesh();
+  scene.add(simulationMesh);
 
   const resizeObserver = new ResizeObserver(() => {
     resizeRenderer(renderer, camera, mountElement);
@@ -60,6 +63,15 @@ export async function createWallScene(
 
   let animationFrameHandle = 0;
   const renderLoop = () => {
+    const elapsed = performance.now() / 1000;
+    const desiredDelta = new THREE.Vector3(
+      Math.cos(elapsed * 0.9) * 0.002,
+      0,
+      Math.sin(elapsed * 0.9) * 0.002
+    );
+
+    stepPhysicsAndSyncVisual(physics, simulationMesh, desiredDelta);
+
     controls.update();
     renderer.render(scene, camera);
     animationFrameHandle = window.requestAnimationFrame(renderLoop);
@@ -73,6 +85,7 @@ export async function createWallScene(
     controls,
     wallRoot,
     physics,
+    simulationMesh,
     dispose: () => {
       window.cancelAnimationFrame(animationFrameHandle);
       resizeObserver.disconnect();
@@ -81,6 +94,7 @@ export async function createWallScene(
       if (renderer.domElement.parentElement) {
         renderer.domElement.parentElement.removeChild(renderer.domElement);
       }
+      physics.characterController.free();
       physics.world.free();
     }
   };
