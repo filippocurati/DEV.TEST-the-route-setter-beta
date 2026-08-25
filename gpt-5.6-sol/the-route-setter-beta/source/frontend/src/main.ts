@@ -2,6 +2,12 @@ import './style.css';
 import type { HoldManifest } from './api/holdApi';
 import { HoldDetailsModal } from './catalog/holdDetailsModal';
 import { SessionCatalog } from './catalog/sessionCatalog';
+import {
+  commandForKeyboardCode,
+  ContinuousCommandController,
+  isEditableTarget,
+  type HoldCommand,
+} from './input/holdCommands';
 import { createWallScene } from './scene/wallScene';
 
 /** Avvia scena, catalogo e ciclo di vita delle prese per la sessione corrente. */
@@ -36,7 +42,21 @@ async function bootstrap(): Promise<void> {
           <p class="catalog-feedback" data-catalog-feedback aria-live="polite"></p>
           <div class="catalog-list" data-catalog-list></div>
         </aside>
-        <section class="viewport" aria-label="Scena tridimensionale della parete" data-viewport></section>
+        <section class="viewport" aria-label="Scena tridimensionale della parete" data-viewport>
+          <div class="hold-controls" data-hold-controls aria-label="Comandi presa selezionata">
+            <div class="move-pad" aria-label="Spostamento presa">
+              <button type="button" data-hold-command="move-up" aria-label="Sposta presa su" title="Su (Freccia su)">↑</button>
+              <button type="button" data-hold-command="move-left" aria-label="Sposta presa a sinistra" title="Sinistra (Freccia sinistra)">←</button>
+              <button type="button" data-hold-command="move-down" aria-label="Sposta presa giù" title="Giù (Freccia giù)">↓</button>
+              <button type="button" data-hold-command="move-right" aria-label="Sposta presa a destra" title="Destra (Freccia destra)">→</button>
+            </div>
+            <div class="rotate-controls" aria-label="Rotazione presa">
+              <button type="button" data-hold-command="rotate-counterclockwise" aria-label="Ruota presa in senso antiorario" title="Antiorario (Q)">↶</button>
+              <button type="button" data-hold-command="rotate-clockwise" aria-label="Ruota presa in senso orario" title="Orario (E)">↷</button>
+            </div>
+            <p>Frecce: sposta 1 cm · Q/E: ruota 1°</p>
+          </div>
+        </section>
       </div>
     </main>
     <dialog class="details-dialog" data-details-dialog aria-labelledby="details-title">
@@ -57,6 +77,7 @@ async function bootstrap(): Promise<void> {
   const count = requiredElement<HTMLElement>(app, '[data-catalog-count]');
   const feedback = requiredElement<HTMLElement>(app, '[data-catalog-feedback]');
   const removeButton = requiredElement<HTMLButtonElement>(app, '[data-remove-hold]');
+  const commandButtons = [...app.querySelectorAll<HTMLButtonElement>('[data-hold-command]')];
   const details = new HoldDetailsModal(requiredElement<HTMLDialogElement>(app, '[data-details-dialog]'));
   const catalog = new SessionCatalog();
 
@@ -108,14 +129,58 @@ async function bootstrap(): Promise<void> {
       });
     };
 
+    const updateSelectionUi = (selectedId: string | null): void => {
+      removeButton.disabled = selectedId === null;
+      commandButtons.forEach((button) => { button.disabled = selectedId === null; });
+      if (selectedId) feedback.textContent = `${selectedId} selezionata.`;
+    };
+    scene.onSelectionChange(updateSelectionUi);
+
+    const continuousCommands = new ContinuousCommandController();
+    const executeCommand = (command: HoldCommand): void => {
+      if (scene.executeCommand(command)) {
+        const selected = scene.selectedHoldId();
+        if (selected) feedback.textContent = `${selected}: comando applicato.`;
+      }
+    };
+    commandButtons.forEach((button) => {
+      const command = button.dataset.holdCommand as HoldCommand;
+      const key = `button:${command}`;
+      button.addEventListener('mousedown', (event) => {
+        if (button.disabled || event.button !== 0) return;
+        event.preventDefault();
+        continuousCommands.start(key, command, executeCommand);
+      });
+      const stop = (): void => continuousCommands.stop(key);
+      window.addEventListener('mouseup', stop);
+      button.addEventListener('pointerdown', (event) => {
+        if (button.disabled || event.pointerType === 'mouse') return;
+        event.preventDefault();
+        continuousCommands.start(key, command, executeCommand);
+      });
+      window.addEventListener('pointerup', (event) => {
+        if (event.pointerType !== 'mouse') stop();
+      });
+      window.addEventListener('pointercancel', (event) => {
+        if (event.pointerType !== 'mouse') stop();
+      });
+    });
+    window.addEventListener('keydown', (event) => {
+      const command = commandForKeyboardCode(event.code);
+      if (!command || isEditableTarget(event.target)) return;
+      event.preventDefault();
+      continuousCommands.start(`key:${event.code}`, command, executeCommand);
+    });
+    window.addEventListener('keyup', (event) => continuousCommands.stop(`key:${event.code}`));
+    window.addEventListener('blur', () => continuousCommands.stopAll());
+
     removeButton.addEventListener('click', () => {
-      const activeId = scene.activeHoldId();
-      if (!activeId || !scene.removeHold(activeId)) {
+      const selectedId = scene.selectedHoldId();
+      if (!selectedId || !scene.removeHold(selectedId)) {
         return;
       }
-      catalog.release(activeId);
-      feedback.textContent = `${activeId} riportata nel catalogo.`;
-      removeButton.disabled = scene.activeHoldId() === null;
+      catalog.release(selectedId);
+      feedback.textContent = `${selectedId} riportata nel catalogo.`;
       void renderCatalog();
     });
 

@@ -62,6 +62,21 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('trasla deterministicamente una presa non ancora agganciata', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const object = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 1),
+      new Quaternion(),
+    );
+
+    physics.translateKinematicObject(object, { x: 0.01, y: 0, z: 0 });
+    physics.step();
+
+    expect(object.body.translation().x).toBeCloseTo(0.01);
+    physics.dispose();
+  });
+
   it('usa move-and-slide bloccando la parete e mantenendo la componente libera', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
     const object = physics.createKinematicObject(

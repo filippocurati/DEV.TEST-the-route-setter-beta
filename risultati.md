@@ -122,3 +122,17 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 ### gpt-5.3-codex 
 - comletato con successo in 18 minuti
 - errore lato client nella visualizzazione della presa e nell'utilizzo in scena, 3 iterazioni al momento non hanno corretto l'errore
+- numerose iterazioni non hanno ancora risolto l'errore, quindi al momento l'elaborazione è ferma qui
+
+
+## FASE 6 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- comletato con successo in 77 minuti, non è chiaro il motivo di così tanto tempo ma si è conclusa da sola senza necessità di interruzioni
+- implementazione completa e corretta, sono state evidenziate mancanze ma a livello di specifiche
+
+
+
+### gpt-5.3-codex 

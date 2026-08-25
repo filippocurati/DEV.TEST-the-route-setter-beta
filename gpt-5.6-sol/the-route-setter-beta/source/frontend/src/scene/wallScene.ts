@@ -5,18 +5,28 @@ import {
   Color,
   DirectionalLight,
   Group,
+  Material,
   MathUtils,
+  Mesh,
+  Object3D,
   PerspectiveCamera,
+  Raycaster,
   Quaternion,
   Scene,
   SRGBColorSpace,
   Vector3,
+  Vector2,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { fetchHoldCollider, type HoldManifest } from '../api/holdApi';
 import { loadHoldModel, type HoldModelResource } from '../holds/holdResources';
+import {
+  ROTATION_STEP_RADIANS,
+  TRANSLATION_STEP_METERS,
+  type HoldCommand,
+} from '../input/holdCommands';
 import { PhysicsWorld } from '../physics/physicsWorld';
 import type { KinematicPhysicsObject } from '../physics/physicsWorld';
 import { loadWall } from './wallLoader';
@@ -38,6 +48,13 @@ export interface WallSceneDebug {
   readonly characterAutostepEnabled: boolean;
   readonly characterSnapToGroundEnabled: boolean;
   readonly holdInstanceIds: readonly string[];
+  readonly selectedHoldId: string | null;
+  readonly selectedHoldPosition: readonly number[] | null;
+  readonly selectedHoldRotation: readonly number[] | null;
+  readonly selectedHoldBodyValid: boolean;
+  readonly holdScreenPositions: Readonly<Record<string, readonly number[]>>;
+  readonly rigidBodyCount: number;
+  readonly colliderCount: number;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -45,7 +62,9 @@ export interface WallSceneController {
   addHold(hold: HoldManifest): Promise<void>;
   removeHold(id: string): boolean;
   hasHold(id: string): boolean;
-  activeHoldId(): string | null;
+  selectedHoldId(): string | null;
+  executeCommand(command: HoldCommand): boolean;
+  onSelectionChange(listener: (id: string | null) => void): () => void;
 }
 
 interface HoldSceneInstance {
@@ -54,6 +73,8 @@ interface HoldSceneInstance {
   readonly object: Group;
   readonly physics: KinematicPhysicsObject;
   readonly unbind: () => void;
+  readonly originalMaterials: ReadonlyMap<Mesh, Material | Material[]>;
+  readonly highlightedMaterials: Map<Mesh, Material | Material[]>;
 }
 
 declare global {
@@ -97,7 +118,9 @@ export async function createWallScene(
   status.textContent = 'Inizializzazione fisica...';
   const physics = await PhysicsWorld.create(wall.triMesh);
   const holdInstances = new Map<string, HoldSceneInstance>();
-  let activeHoldId: string | null = null;
+  const selectionListeners = new Set<(id: string | null) => void>();
+  const raycaster = new Raycaster();
+  let selectedHoldId: string | null = null;
   frameWall(camera, controls, wall.bounds, wall.center, wall.size);
   status.textContent = 'Parete pronta';
   status.dataset.state = 'ready';
@@ -119,6 +142,21 @@ export async function createWallScene(
       characterAutostepEnabled: physics.characterController.autostepEnabled(),
       characterSnapToGroundEnabled: physics.characterController.snapToGroundEnabled(),
       holdInstanceIds: [...holdInstances.keys()],
+      selectedHoldId,
+      selectedHoldPosition: selectedHoldId
+        ? holdInstances.get(selectedHoldId)?.object.position.toArray() ?? null
+        : null,
+      selectedHoldRotation: selectedHoldId
+        ? holdInstances.get(selectedHoldId)?.object.quaternion.toArray() ?? null
+        : null,
+      selectedHoldBodyValid: selectedHoldId
+        ? holdInstances.get(selectedHoldId)?.physics.body.isValid() ?? false
+        : false,
+      holdScreenPositions: Object.fromEntries(
+        [...holdInstances].map(([id, instance]) => [id, projectPickPoint(instance.object, camera)]),
+      ),
+      rigidBodyCount: physics.world.bodies.len(),
+      colliderCount: physics.world.colliders.len(),
     };
   };
   const render = (): void => {
@@ -139,6 +177,77 @@ export async function createWallScene(
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
   resize();
+
+  renderer.domElement.addEventListener('click', (event) => {
+    const bounds = renderer.domElement.getBoundingClientRect();
+    raycaster.setFromCamera(new Vector2(
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+    ), camera);
+    const hit = raycaster.intersectObjects(
+      [...holdInstances.values()].map((instance) => instance.object),
+      true,
+    )[0];
+    const id = hit ? findHoldId(hit.object) : null;
+    setSelection(id);
+    render();
+  });
+
+  /** Aggiorna selezione ed evidenziazione garantendo una sola presa attiva. */
+  function setSelection(id: string | null): void {
+    if (id === selectedHoldId) {
+      return;
+    }
+    if (selectedHoldId) {
+      const previous = holdInstances.get(selectedHoldId);
+      if (previous) setHighlighted(previous, false);
+    }
+    selectedHoldId = id && holdInstances.has(id) ? id : null;
+    if (selectedHoldId) {
+      const selected = holdInstances.get(selectedHoldId);
+      if (selected) setHighlighted(selected, true);
+    }
+    selectionListeners.forEach((listener) => listener(selectedHoldId));
+  }
+
+  /** Applica un passo elementare alla sola presa selezionata. */
+  function executeCommand(command: HoldCommand): boolean {
+    const selected = selectedHoldId ? holdInstances.get(selectedHoldId) : undefined;
+    if (!selected) {
+      return false;
+    }
+
+    if (command.startsWith('rotate-')) {
+      const current = selected.physics.body.rotation();
+      const delta = new Quaternion().setFromAxisAngle(
+        new Vector3(0, 0, 1),
+        command === 'rotate-clockwise' ? -ROTATION_STEP_RADIANS : ROTATION_STEP_RADIANS,
+      );
+      const next = new Quaternion(current.x, current.y, current.z, current.w).multiply(delta).normalize();
+      physics.setKinematicTransform(selected.physics, selected.physics.body.translation(), next);
+    } else {
+      const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      right.z = 0;
+      up.z = 0;
+      right.normalize();
+      up.normalize();
+      const direction = command === 'move-up' ? up
+        : command === 'move-down' ? up.negate()
+          : command === 'move-right' ? right
+            : right.negate();
+      // Prima dello snap (fase 8) la presa si muove cinematicamente sul piano frontale convenzionale.
+      const current = selected.physics.body.translation();
+      physics.setKinematicTransform(selected.physics, {
+        x: current.x + direction.x * TRANSLATION_STEP_METERS,
+        y: current.y + direction.y * TRANSLATION_STEP_METERS,
+        z: current.z + direction.z * TRANSLATION_STEP_METERS,
+      }, selected.physics.body.rotation());
+    }
+    physics.synchronizeRendering();
+    render();
+    return true;
+  }
 
   return {
     addHold: async (hold) => {
@@ -163,7 +272,15 @@ export async function createWallScene(
 
         const object = model.createInstance();
         stagedObject = object;
-        const insertionPosition = wall.center.clone().add(new Vector3(0, 0, Math.max(wall.size.z, 1) * 0.75));
+        object.traverse((child) => { child.userData.holdModelId = hold.id; });
+        object.updateWorldMatrix(true, true);
+        const modelCenter = new Box3().setFromObject(object).getCenter(new Vector3());
+        const insertionTarget = wall.center.clone().add(new Vector3(
+          holdInstances.size * Math.max(wall.size.x, 1) * 0.08,
+          0,
+          Math.max(wall.size.z, 1) * 0.75,
+        ));
+        const insertionPosition = insertionTarget.sub(modelCenter);
         object.position.copy(insertionPosition);
         object.updateMatrix();
         scene.add(object);
@@ -173,8 +290,16 @@ export async function createWallScene(
           new Quaternion(),
         );
         const unbind = physics.bindRenderingObject(physicsObject.body, object);
-        holdInstances.set(hold.id, { id: hold.id, model, object, physics: physicsObject, unbind });
-        activeHoldId = hold.id;
+        holdInstances.set(hold.id, {
+          id: hold.id,
+          model,
+          object,
+          physics: physicsObject,
+          unbind,
+          originalMaterials: captureMaterials(object),
+          highlightedMaterials: new Map(),
+        });
+        setSelection(hold.id);
         physics.step();
         render();
       } catch (error) {
@@ -188,20 +313,107 @@ export async function createWallScene(
       if (!instance) {
         return false;
       }
+      if (selectedHoldId === id) setSelection(null);
       instance.unbind();
       physics.removeKinematicObject(instance.physics);
       instance.object.removeFromParent();
       instance.model.dispose();
       holdInstances.delete(id);
-      if (activeHoldId === id) {
-        activeHoldId = [...holdInstances.keys()].at(-1) ?? null;
-      }
       render();
       return true;
     },
     hasHold: (id) => holdInstances.has(id),
-    activeHoldId: () => activeHoldId,
+    selectedHoldId: () => selectedHoldId,
+    executeCommand,
+    onSelectionChange: (listener) => {
+      selectionListeners.add(listener);
+      listener(selectedHoldId);
+      return () => selectionListeners.delete(listener);
+    },
   };
+}
+
+/** Risale dalla mesh colpita fino alla radice istanza annotata. */
+function findHoldId(object: Object3D): string | null {
+  let current: Object3D | null = object;
+  while (current) {
+    if (typeof current.userData.holdModelId === 'string') {
+      return current.userData.holdModelId;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/** Proietta il baricentro di un triangolo reale per consentire verifiche raycast affidabili. */
+function projectPickPoint(root: Group, camera: PerspectiveCamera): readonly number[] {
+  let point: Vector3 | undefined;
+  root.updateWorldMatrix(true, true);
+  root.traverse((object) => {
+    if (point || !(object instanceof Mesh)) return;
+    const position = object.geometry.getAttribute('position');
+    if (!position || position.count < 3) return;
+    const index = object.geometry.index;
+    const triangleCount = Math.floor((index?.count ?? position.count) / 3);
+    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+      const aIndex = index?.getX(triangle * 3) ?? triangle * 3;
+      const bIndex = index?.getX(triangle * 3 + 1) ?? triangle * 3 + 1;
+      const cIndex = index?.getX(triangle * 3 + 2) ?? triangle * 3 + 2;
+      const a = new Vector3().fromBufferAttribute(position, aIndex).applyMatrix4(object.matrixWorld);
+      const b = new Vector3().fromBufferAttribute(position, bIndex).applyMatrix4(object.matrixWorld);
+      const c = new Vector3().fromBufferAttribute(position, cIndex).applyMatrix4(object.matrixWorld);
+      const normal = new Vector3().subVectors(b, a).cross(new Vector3().subVectors(c, a)).normalize();
+      const center = a.add(b).add(c).multiplyScalar(1 / 3);
+      const projected = center.clone().project(camera);
+      if (normal.dot(new Vector3().subVectors(camera.position, center)) > 0
+        && Math.abs(projected.x) < 0.95
+        && Math.abs(projected.y) < 0.95
+        && Math.abs(projected.z) <= 1) {
+        point = center;
+        break;
+      }
+    }
+  });
+  const projected = (point ?? new Box3().setFromObject(root).getCenter(new Vector3())).project(camera);
+  return [projected.x, projected.y];
+}
+
+/** Conserva i materiali originali delle mesh per ripristinare l'aspetto dopo la selezione. */
+function captureMaterials(root: Group): ReadonlyMap<Mesh, Material | Material[]> {
+  const materials = new Map<Mesh, Material | Material[]>();
+  root.traverse((object) => {
+    if (object instanceof Mesh) {
+      materials.set(object, object.material as Material | Material[]);
+    }
+  });
+  return materials;
+}
+
+/** Evidenzia la presa clonando temporaneamente i materiali senza modificare il modello catalogo. */
+function setHighlighted(instance: HoldSceneInstance, highlighted: boolean): void {
+  for (const [mesh, original] of instance.originalMaterials) {
+    if (!highlighted) {
+      const highlightedMaterial = instance.highlightedMaterials.get(mesh);
+      const highlightedList = Array.isArray(highlightedMaterial) ? highlightedMaterial : [highlightedMaterial];
+      highlightedList.forEach((material) => material?.dispose());
+      instance.highlightedMaterials.delete(mesh);
+      mesh.material = original;
+      continue;
+    }
+
+    const source = Array.isArray(original) ? original : [original];
+    const selected = source.map((material) => {
+      const clone = material.clone();
+      if ('emissive' in clone && clone.emissive instanceof Color) {
+        clone.emissive.setHex(0xe6a25c);
+        if ('emissiveIntensity' in clone) clone.emissiveIntensity = 0.45;
+      }
+      return clone;
+    });
+    const selectionMaterial = Array.isArray(original) ? selected : selected[0];
+    instance.highlightedMaterials.set(mesh, selectionMaterial);
+    mesh.material = selectionMaterial;
+  }
 }
 
 /** Posiziona camera e target in funzione del bounding box reale della parete. */

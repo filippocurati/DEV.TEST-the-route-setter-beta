@@ -104,6 +104,34 @@ export class PhysicsWorld {
     object.body.setNextKinematicRotation(rotation);
   }
 
+  /** Trasla direttamente un corpo cinematico non ancora agganciato alla parete. */
+  translateKinematicObject(object: KinematicPhysicsObject, delta: RAPIER.Vector): void {
+    this.ensureActive();
+    const current = object.body.translation();
+    object.body.setNextKinematicTranslation({
+      x: current.x + delta.x,
+      y: current.y + delta.y,
+      z: current.z + delta.z,
+    });
+  }
+
+  /** Applica subito una trasformazione pre-snap, senza avviare query collisioni sul TriMesh. */
+  setKinematicTransform(
+    object: KinematicPhysicsObject,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+  ): void {
+    this.ensureActive();
+    object.body.setTranslation(translation, false);
+    object.body.setRotation(rotation, false);
+  }
+
+  /** Sincronizza le mesh registrate senza avanzare il mondo fisico. */
+  synchronizeRendering(): void {
+    this.ensureActive();
+    synchronizePhysicsToRendering(this.bindings);
+  }
+
   /** Rimuove corpo e collider associati a un'istanza che lascia la scena. */
   removeKinematicObject(object: KinematicPhysicsObject): void {
     this.ensureActive();
