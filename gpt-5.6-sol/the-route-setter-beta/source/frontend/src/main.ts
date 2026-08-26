@@ -9,6 +9,7 @@ import {
   type HoldCommand,
 } from './input/holdCommands';
 import { createWallScene } from './scene/wallScene';
+import { downloadGuideImage } from './export/guideImage';
 
 /** Avvia scena, catalogo e ciclo di vita delle prese per la sessione corrente. */
 async function bootstrap(): Promise<void> {
@@ -25,7 +26,7 @@ async function bootstrap(): Promise<void> {
           <h1 id="page-title">The Route Setter</h1>
         </div>
         <nav class="topbar-actions" aria-label="Comandi tracciatura">
-          <button type="button" disabled title="Disponibile in una fase successiva">Genera immagine</button>
+          <button type="button" data-generate-image disabled>Genera immagine</button>
           <button type="button" data-remove-hold disabled>Rimuovi presa</button>
         </nav>
         <p class="scene-status" role="status" data-scene-status>Caricamento parete...</p>
@@ -81,6 +82,7 @@ async function bootstrap(): Promise<void> {
   const count = requiredElement<HTMLElement>(app, '[data-catalog-count]');
   const feedback = requiredElement<HTMLElement>(app, '[data-catalog-feedback]');
   const removeButton = requiredElement<HTMLButtonElement>(app, '[data-remove-hold]');
+  const generateButton = requiredElement<HTMLButtonElement>(app, '[data-generate-image]');
   const commandButtons = [...app.querySelectorAll<HTMLButtonElement>('[data-hold-command]')];
   const details = new HoldDetailsModal(requiredElement<HTMLDialogElement>(app, '[data-details-dialog]'));
   const catalog = new SessionCatalog();
@@ -132,6 +134,23 @@ async function bootstrap(): Promise<void> {
         ));
       });
     };
+    generateButton.disabled = false;
+    generateButton.addEventListener('click', async () => {
+      if (generateButton.disabled) return;
+      generateButton.disabled = true;
+      document.documentElement.dataset.exporting = 'true';
+      feedback.textContent = 'Generazione immagine guida...';
+      try {
+        const result = await scene.generateGuideImage();
+        downloadGuideImage(result.blob);
+        feedback.textContent = `Immagine guida generata (${result.width}×${result.height} px).`;
+      } catch (error) {
+        feedback.textContent = error instanceof Error ? error.message : 'Impossibile generare l’immagine guida.';
+      } finally {
+        delete document.documentElement.dataset.exporting;
+        generateButton.disabled = false;
+      }
+    });
 
     const updateSelectionUi = (selectedId: string | null): void => {
       removeButton.disabled = selectedId === null;

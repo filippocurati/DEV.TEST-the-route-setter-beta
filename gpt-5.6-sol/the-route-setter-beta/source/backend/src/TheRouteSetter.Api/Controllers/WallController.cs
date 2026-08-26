@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using TheRouteSetter.Api.Services.Assets;
 
 namespace TheRouteSetter.Api.Controllers;
@@ -32,8 +33,18 @@ public sealed class WallController : ControllerBase
     public IActionResult Get()
     {
         var asset = assets.GetWall();
-        return asset is null
-            ? NotFound()
-            : PhysicalFile(asset.Path, asset.ContentType, enableRangeProcessing: true);
+        if (asset is null)
+        {
+            return NotFound();
+        }
+
+        var fileName = Path.GetFileName(asset.Path);
+        var disposition = new ContentDispositionHeaderValue("inline")
+        {
+            FileName = fileName,
+            FileNameStar = fileName
+        };
+        Response.Headers.ContentDisposition = disposition.ToString();
+        return PhysicalFile(asset.Path, asset.ContentType, enableRangeProcessing: true);
     }
 }

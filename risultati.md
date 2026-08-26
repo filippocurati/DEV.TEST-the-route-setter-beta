@@ -156,3 +156,14 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 - comletato con successo, tempistica non chiara perché si è interrotta la connessione 
 - implementazione errata, non si arriva allo snap ma quando la presa viene avvicinata alla parete, sempre alla stessa distanza viene poi arretrata
 - effettuate parecchie iterazioni ma l'errore continua a verificarsi anche se l'agent riferisce di averlo rilevato e corretto
+- implementazione ferma a questa fase 
+
+## FASE 9 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- implementazione completata con successo, l'immagine però non è utile, è necessaria un'integrazione delle specifiche per la generazione
+- dopo le specifiche nuove l'immagine viene generata correttamente 
+
+### gpt-5.3-codex 

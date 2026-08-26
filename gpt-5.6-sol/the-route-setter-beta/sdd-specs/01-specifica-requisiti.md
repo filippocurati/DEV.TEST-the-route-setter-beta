@@ -200,17 +200,17 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 ## IMG - Generazione immagine
 
-**REQ-IMG-001 - Vista ortografica frontale.**
-- Criteri: export usa camera ortografica frontale dedicata.
+**REQ-IMG-001 - Esportazione della vista corrente.**
+- Criteri: l'export mantiene esattamente posizione, orientamento, zoom, proiezione prospettica e rapporto d'aspetto della camera interattiva corrente.
 
-**REQ-IMG-002 - Output pulito.**
-- Criteri: UI nascosta e sfondo bianco durante export.
+**REQ-IMG-002 - Output della sola scena.**
+- Criteri: l'immagine contiene esclusivamente il rendering 3D visibile nella viewport, senza catalogo, menu o controlli UI; lo sfondo corrisponde a quello corrente della scena.
 
 **REQ-IMG-003 - Formato.**
 - Criteri: file JPG valido ad alta risoluzione.
 
 **REQ-IMG-004 - Specifica concreta export.**
-- Criteri: lato lungo 2560 px, lato corto proporzionale, qualita JPEG 0.90.
+- Criteri: il lato lungo e 2560 px e il lato corto e proporzionale al rapporto d'aspetto della viewport corrente; qualita JPEG 0.90.
 
 ## PRF - Prestazioni
 

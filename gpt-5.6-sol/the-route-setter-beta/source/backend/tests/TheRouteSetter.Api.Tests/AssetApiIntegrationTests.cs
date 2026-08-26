@@ -36,6 +36,8 @@ public sealed class AssetApiIntegrationTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("model/gltf-binary", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("inline", response.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("wall.glb", response.Content.Headers.ContentDisposition?.FileNameStar);
         Assert.Equal("WALL-BYTES", await response.Content.ReadAsStringAsync());
     }
 
@@ -66,7 +68,10 @@ public sealed class AssetApiIntegrationTests : IDisposable
         var holds = await client.GetFromJsonAsync<HoldManifest[]>("/api/holds");
         var hold = Assert.Single(holds!, item => item.Id == "Hold1");
 
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(hold.ModelUrl)).StatusCode);
+        var modelResponse = await client.GetAsync(hold.ModelUrl);
+        Assert.Equal(HttpStatusCode.OK, modelResponse.StatusCode);
+        Assert.Equal("inline", modelResponse.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("hold1.glb", modelResponse.Content.Headers.ContentDisposition?.FileNameStar);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(hold.PreviewUrl)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(hold.ColliderUrl)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(Assert.Single(hold.OptionalAssetUrls))).StatusCode);

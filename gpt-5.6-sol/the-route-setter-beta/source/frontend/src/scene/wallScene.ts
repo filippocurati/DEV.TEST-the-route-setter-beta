@@ -21,6 +21,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { fetchHoldCollider, type HoldManifest } from '../api/holdApi';
+import { generateGuideImage, type CameraSnapshot, type GuideImageResult } from '../export/guideImage';
 import { loadHoldModel, type HoldModelResource } from '../holds/holdResources';
 import {
   ROTATION_STEP_RADIANS,
@@ -81,6 +82,14 @@ export interface WallSceneDebug {
     readonly contactPoint: readonly number[] | null;
   }>>;
   readonly wallFrontReference: readonly number[];
+  readonly lastExportCamera: CameraSnapshot | null;
+  readonly lastExportDimensions: readonly number[] | null;
+  readonly cameraQuaternion: readonly number[];
+  readonly cameraFov: number;
+  readonly cameraZoom: number;
+  readonly cameraNear: number;
+  readonly cameraFar: number;
+  readonly cameraAspect: number;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -91,6 +100,7 @@ export interface WallSceneController {
   selectedHoldId(): string | null;
   executeCommand(command: HoldCommand): boolean;
   onSelectionChange(listener: (id: string | null) => void): () => void;
+  generateGuideImage(): Promise<GuideImageResult>;
 }
 
 interface HoldSceneInstance {
@@ -158,6 +168,8 @@ export async function createWallScene(
   const selectionListeners = new Set<(id: string | null) => void>();
   const raycaster = new Raycaster();
   let selectedHoldId: string | null = null;
+  let lastExportCamera: CameraSnapshot | null = null;
+  let lastExportDimensions: readonly number[] | null = null;
   frameWall(camera, controls, wall.bounds, wall.center, wall.size);
   status.textContent = 'Parete pronta';
   status.dataset.state = 'ready';
@@ -168,6 +180,12 @@ export async function createWallScene(
       triMeshVertexCount: wall.triMesh.vertices.length / 3,
       triMeshIndexCount: wall.triMesh.indices.length,
       cameraPosition: camera.position.toArray(),
+      cameraQuaternion: camera.quaternion.toArray(),
+      cameraFov: camera.fov,
+      cameraZoom: camera.zoom,
+      cameraNear: camera.near,
+      cameraFar: camera.far,
+      cameraAspect: camera.aspect,
       controlsTarget: controls.target.toArray(),
       wallCenter: wall.center.toArray(),
       wallMaxDimension: Math.max(wall.size.x, wall.size.y, wall.size.z),
@@ -206,6 +224,8 @@ export async function createWallScene(
         }]),
       ),
       wallFrontReference: frontReference.toArray(),
+      lastExportCamera,
+      lastExportDimensions,
     };
   };
   let renderPending = false;
@@ -525,6 +545,25 @@ export async function createWallScene(
       selectionListeners.add(listener);
       listener(selectedHoldId);
       return () => selectionListeners.delete(listener);
+    },
+    generateGuideImage: async () => {
+      const selected = selectedHoldId ? holdInstances.get(selectedHoldId) : undefined;
+      if (selected) setHighlighted(selected, false);
+      try {
+        const result = await generateGuideImage(
+          scene,
+          camera,
+          renderer,
+          Math.max(container.clientWidth, 1),
+          Math.max(container.clientHeight, 1),
+        );
+        lastExportCamera = result.camera;
+        lastExportDimensions = [result.width, result.height];
+        return result;
+      } finally {
+        if (selected) setHighlighted(selected, true);
+        render();
+      }
     },
   };
 }

@@ -8,6 +8,9 @@ const environment = (
 ).process?.env;
 const frontendPort = Number(environment?.E2E_FRONTEND_PORT ?? 5173);
 const backendPort = Number(environment?.E2E_BACKEND_PORT ?? 5080);
+const reuseExistingServer = environment?.E2E_REUSE_SERVER === 'true';
+const backendCommand = environment?.E2E_BACKEND_COMMAND
+  ?? `"${dotnetCommand}" run --no-launch-profile --project ../backend/src/TheRouteSetter.Api/TheRouteSetter.Api.csproj --urls http://127.0.0.1:${backendPort}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -24,15 +27,15 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `"${dotnetCommand}" run --no-launch-profile --project ../backend/src/TheRouteSetter.Api/TheRouteSetter.Api.csproj --urls http://127.0.0.1:${backendPort}`,
+      command: backendCommand,
       url: `http://127.0.0.1:${backendPort}/api/system/health`,
-      reuseExistingServer: false,
+      reuseExistingServer,
       timeout: 120_000,
     },
     {
       command: `npm run dev -- --host 127.0.0.1 --port ${frontendPort}`,
       url: `http://127.0.0.1:${frontendPort}`,
-      reuseExistingServer: false,
+      reuseExistingServer,
     },
   ],
 });

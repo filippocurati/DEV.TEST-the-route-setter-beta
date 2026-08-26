@@ -15,7 +15,7 @@
 | REQ-HUL-001..006 | 02 §5 | Hull tests xUnit + integration |
 | REQ-HUL-007 | 02 §5 | Build guard + test suite hull |
 | REQ-UI-001..004 | 02 §8 | E2E UI/input |
-| REQ-IMG-001..004 | 02 §9 | E2E export immagine + file checks |
+| REQ-IMG-001..004 | 02 §9 | E2E equivalenza vista corrente + export JPG |
 | REQ-PRF-001..006 | 02 §11 | Benchmark scenario standard |
 | REQ-ERR-001..005 | 02 §10 | Error tests backend/frontend |
 | REQ-LOG-001..007 | 02 §10 | Logging structure/sanitization/rotation tests |

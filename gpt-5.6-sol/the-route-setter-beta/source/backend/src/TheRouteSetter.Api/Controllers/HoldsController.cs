@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using TheRouteSetter.Api.Models;
 using TheRouteSetter.Api.Services.Assets;
 
@@ -66,7 +67,28 @@ public sealed class HoldsController : ControllerBase
     /// <summary>
     /// Converte un asset disponibile in una risposta file con supporto alle richieste range.
     /// </summary>
-    private IActionResult ToFileResult(AssetFile? asset) => asset is null
-        ? NotFound()
-        : PhysicalFile(asset.Path, asset.ContentType, enableRangeProcessing: true);
+    private IActionResult ToFileResult(AssetFile? asset)
+    {
+        if (asset is null)
+        {
+            return NotFound();
+        }
+
+        SetInlineFileName(asset.Path);
+        return PhysicalFile(asset.Path, asset.ContentType, enableRangeProcessing: true);
+    }
+
+    /// <summary>
+    /// Comunica al browser il nome fisico dell'asset senza forzarne il download.
+    /// </summary>
+    private void SetInlineFileName(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        var disposition = new ContentDispositionHeaderValue("inline")
+        {
+            FileName = fileName,
+            FileNameStar = fileName
+        };
+        Response.Headers.ContentDisposition = disposition.ToString();
+    }
 }
