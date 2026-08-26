@@ -141,3 +141,18 @@ Esecuzione partita prima per gpt-5.3-codex e gpt-5.6-sol, DeepSeek fermo a fase 
 
 ### gpt-5.3-codex 
 - implementata con successo in 17 minuti dopo la modifica alle specifiche, non ha rilevato però incongruità con le nuove specifiche come gpt-sol
+
+
+## FASE 8 - 1° esecuzione
+
+### deepseek-v4-flash
+
+### gpt-5.6-sol
+- comletato con successo, tempistica non chiara perché si è interrotta la connessione  
+- implementazione completata con successo, non viene però rilevata correttamente la parte piatta della presa con cui fare lo snap, ora viene attaccata alla parete al contrario
+- modificati i modelli glb ed il funzionamento è perfetto
+
+### gpt-5.3-codex 
+- comletato con successo, tempistica non chiara perché si è interrotta la connessione 
+- implementazione errata, non si arriva allo snap ma quando la presa viene avvicinata alla parete, sempre alla stessa distanza viene poi arretrata
+- effettuate parecchie iterazioni ma l'errore continua a verificarsi anche se l'agent riferisce di averlo rilevato e corretto

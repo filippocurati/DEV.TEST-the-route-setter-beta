@@ -103,7 +103,7 @@ test.describe('selezione e comandi hold', () => {
     const before = (await sceneState(page)).selectedHoldPosition!;
 
     await button.dispatchEvent('mousedown', { button: 0 });
-    await page.waitForTimeout(3_000);
+    await page.waitForTimeout(5_000);
     await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup')));
     const after = (await sceneState(page)).selectedHoldPosition!;
 

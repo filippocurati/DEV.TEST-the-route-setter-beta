@@ -108,6 +108,56 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('restituisce punto e normale del contatto parete', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+
+    const contact = physics.castRayToWall({ x: 0, y: 0, z: 0.04 }, { x: 0, y: 0, z: -1 }, 1);
+
+    expect(contact?.distance).toBeCloseTo(0.04);
+    expect(contact?.point.z).toBeCloseTo(0);
+    expect(Math.abs(contact?.normal.z ?? 0)).toBeCloseTo(1);
+    physics.dispose();
+  });
+
+  it('move-and-slide tangenziale non attraversa un’altra hold', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 0.1),
+      new Quaternion(),
+    );
+    physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0.21, 0, 0.1),
+      new Quaternion(),
+    );
+    physics.world.updateSceneQueries();
+
+    const movement = physics.moveTangentialWithCollisions(moving, { x: 0.1, y: 0.1, z: 0 });
+
+    expect(movement.x).toBeLessThan(0.1);
+    expect(movement.y).toBeGreaterThan(0.05);
+    physics.dispose();
+  });
+
+  it('rifiuta una trasformazione candidata sovrapposta a un’altra hold', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 0.2),
+      new Quaternion(),
+    );
+    physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0.15, 0, 0.2),
+      new Quaternion(),
+    );
+
+    expect(physics.canPlaceWithoutHoldOverlap(moving, { x: 0.15, y: 0, z: 0.2 }, new Quaternion())).toBe(false);
+    expect(physics.canPlaceWithoutHoldOverlap(moving, { x: -0.5, y: 0, z: 0.2 }, new Quaternion())).toBe(true);
+    physics.dispose();
+  });
+
   it('usa move-and-slide bloccando la parete e mantenendo la componente libera', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
     const object = physics.createKinematicObject(

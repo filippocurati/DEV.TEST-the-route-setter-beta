@@ -17,6 +17,14 @@ export interface KinematicPhysicsObject {
   readonly collider: RAPIER.Collider;
 }
 
+/** Contatto raycast con la parete fisica. */
+export interface WallRayContact {
+  readonly point: RAPIER.Vector;
+  readonly normal: RAPIER.Vector;
+  readonly distance: number;
+  readonly featureId: number;
+}
+
 /** Fondazione fisica client-side della sessione, priva di dipendenze REST. */
 export class PhysicsWorld {
   readonly world: RAPIER.World;
@@ -97,6 +105,86 @@ export class PhysicsWorld {
       z: current.z + movement.z,
     });
     return { x: movement.x, y: movement.y, z: movement.z };
+  }
+
+  /** Esegue move-and-slide immediato contro le altre hold, escludendo il TriMesh parete. */
+  moveTangentialWithCollisions(
+    object: KinematicPhysicsObject,
+    desiredDelta: RAPIER.Vector,
+  ): RAPIER.Vector {
+    this.ensureActive();
+    this.world.updateSceneQueries();
+    this.characterController.computeColliderMovement(
+      object.collider,
+      desiredDelta,
+      undefined,
+      undefined,
+      (candidate) => candidate.handle !== this.wallCollider.handle,
+    );
+    const movement = this.characterController.computedMovement();
+    const current = object.body.translation();
+    this.setKinematicTransform(object, {
+      x: current.x + movement.x,
+      y: current.y + movement.y,
+      z: current.z + movement.z,
+    }, object.body.rotation());
+    return { x: movement.x, y: movement.y, z: movement.z };
+  }
+
+  /** Cerca il contatto più vicino con il solo collider parete lungo il raggio indicato. */
+  castRayToWall(origin: RAPIER.Vector, direction: RAPIER.Vector, maxDistance: number): WallRayContact | null {
+    this.ensureActive();
+    this.world.updateSceneQueries();
+    const directionLength = Math.hypot(direction.x, direction.y, direction.z);
+    if (directionLength === 0) return null;
+    const ray = new this.rapier.Ray(origin, direction);
+    const contacts: WallRayContact[] = [];
+    this.world.intersectionsWithRay(
+      ray,
+      maxDistance,
+      true,
+      (hit) => {
+        if (hit.collider.handle !== this.wallCollider.handle) return true;
+        contacts.push({
+          point: {
+            x: origin.x + direction.x * hit.toi,
+            y: origin.y + direction.y * hit.toi,
+            z: origin.z + direction.z * hit.toi,
+          },
+          normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z },
+          distance: hit.toi * directionLength,
+          featureId: hit.featureId ?? Number.MAX_SAFE_INTEGER,
+        });
+        return true;
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (candidate) => candidate.handle === this.wallCollider.handle,
+    );
+    return contacts.sort((left, right) => left.distance - right.distance || left.featureId - right.featureId)[0] ?? null;
+  }
+
+  /** Verifica una trasformazione candidata contro le altre hold, escludendo la parete. */
+  canPlaceWithoutHoldOverlap(
+    object: KinematicPhysicsObject,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+  ): boolean {
+    this.ensureActive();
+    let valid = true;
+    this.world.forEachCollider((candidate) => {
+      if (!valid || candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+      if (object.collider.shape.intersectsShape(
+        translation,
+        rotation,
+        candidate.shape,
+        candidate.translation(),
+        candidate.rotation(),
+      )) valid = false;
+    });
+    return valid;
   }
 
   /** Programma la rotazione cinematica che verrà applicata al prossimo step. */
