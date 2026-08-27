@@ -120,8 +120,9 @@ La navigazione della scena deve essere implementata tramite OrbitControls di Thr
 ## SALVATAGGIO E STAMPA GUIDA PER IL TRACCIATORE
 
 Al momento non deve essere presente nessun sistema di salvataggio delle tracciature realizzate dall'utente, ogni sessione di lavoro o di tracciatura dell'utente non deve al momento essere persistita o storicizzata.
-L'applicazione deve mettere a disposizione un pulsante "Genera immagine". Alla pressione del pulsante deve essere generata automaticamente una vista dedicata esclusivamente alla stampa utilizzando una telecamera ortografica frontale. 
-L'interfaccia utente deve essere nascosta e la parete deve essere renderizzata su sfondo bianco mantenendo tutte le proporzioni corrette. 
+L'applicazione deve mettere a disposizione un pulsante "Genera immagine". Alla pressione del pulsante deve essere esportata la vista corrente della scena cosi come inquadrata dall'utente.
+L'esportazione deve mantenere posizione, orientamento, zoom, proiezione prospettica e proporzioni della camera interattiva corrente. Non deve essere utilizzata una camera ortografica dedicata.
+L'immagine deve contenere esclusivamente la scena 3D, senza catalogo, menu, controlli o altri elementi dell'interfaccia. Lo sfondo deve corrispondere a quello visualizzato nella viewport.
 L'immagine deve essere esportata ad alta risoluzione in formato JPG. Lo scopo della tavola è fornire al tracciatore una rappresentazione chiara della disposizione delle prese da utilizzare come riferimento durante la realizzazione fisica della via.
 
 ## PRESTAZIONI DELL'APPLICAZIONE

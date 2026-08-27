@@ -408,19 +408,20 @@ Produrre JPG guida conforme alle specifiche.
 - `REQ-UI-002` (integrazione comando)
 
 ### Vincoli e specifiche da garantire
-- camera ortografica frontale;
-- UI nascosta + sfondo bianco;
+- clone della camera prospettica corrente;
+- export della sola scena 3D (senza elementi UI) con sfondo corrente della scena;
 - lato lungo 2560 px, qualita 0.90;
-- ripristino stato scena/UI.
+- scena e camera interattiva non alterate dopo export.
 
 ### Task implementativi
 - pipeline export;
-- gestione hide/restore UI;
+- acquisizione vista corrente della camera interattiva;
 - generazione blob JPG e download.
 
 ### Test da eseguire
 - E2E export file e validita JPG;
-- verifica assenza elementi UI nel risultato.
+- verifica assenza elementi UI nel risultato;
+- test equivalenza tra camera visualizzata ed esportata (posizione/orientamento/zoom/proiezione/aspect).
 
 ### Definition of Done
 - immagine guida leggibile e proporzionata;

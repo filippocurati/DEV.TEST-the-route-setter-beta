@@ -175,11 +175,13 @@ A parita di distanza dal centro, l'ordine dei candidati deve essere deterministi
 
 ## 9. Export immagine
 
-- camera ortografica frontale temporanea;
-- UI nascosta;
-- sfondo bianco;
+- clonare la camera prospettica interattiva corrente;
+- mantenere posizione, orientamento, FOV, zoom e rapporto d'aspetto della viewport;
+- renderizzare esclusivamente la scena 3D;
+- escludere tutti gli elementi DOM dell'interfaccia;
+- mantenere lo sfondo corrente della scena;
 - export JPG con lato lungo 2560 px, lato corto proporzionale, qualita 0.90;
-- ripristino stato UI/camera al termine.
+- non modificare lo stato della camera o della scena interattiva.
 
 ## 10. Error handling e logging
 
