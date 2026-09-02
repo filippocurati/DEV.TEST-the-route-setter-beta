@@ -29,8 +29,10 @@ La mesh non e usata per collisioni.
 **C7 - Convex Hull hold pre-calcolato lato backend.**
 I collider delle prese sono generati lato backend come calcolo geometrico statico.
 
-**C8 - Parete con TriMesh lato frontend.**
-Il collider parete e TriMesh derivato dalla geometria parete e creato lato client.
+**C8 - Parete continua con TriMesh lato frontend.**
+Il collider parete e un TriMesh statico derivato dall'intera geometria della parete e creato lato client.
+Collisioni, punto piu vicino, snap e movimento post-snap devono usare la forma reale del TriMesh.
+E vietato sostituire la parete con un piano globale, un unico Convex Hull, una profondita costante o una normale fissa.
 
 **C9 - Unita e sistema di riferimento.**
 Sistema destrorso coerente con three.js; 1 unita = 1 metro.
@@ -52,10 +54,19 @@ Parsing GLB backend: SharpGLTF.
 Libreria Convex Hull backend: MIConvexHull.
 Logging backend: Serilog.
 
+**C14 - Regola di tracciabilita.**
+Ogni funzionalita implementata deve riferirsi a requisiti e test verificabili.
+
 **C15 - Versionamento dipendenze deterministico.**
 Le dipendenze npm/NuGet devono essere pin-nate a versione esatta.
 Devono essere versionati i file di lock (`package-lock.json` o equivalente e lock NuGet) per garantire build ripetibili.
 Le versioni iniziali di riferimento sono definite nei requisiti `REQ-DEP-004`.
 
-**C14 - Regola di tracciabilita.**
-Ogni funzionalita implementata deve riferirsi a requisiti e test verificabili.
+**C16 - Transizioni locali sulla superficie.**
+La parete e trattata come una superficie continua. Una presa agganciata puo passare a una faccia con inclinazione diversa soltanto quando il movimento raggiunge il bordo condiviso o il primo contatto fisico con una superficie geometricamente contigua, entro la tolleranza configurata. Non sono consentiti trasferimenti a distanza o dipendenti dalla camera.
+
+**C17 - Percorso e posa non compenetranti.**
+Traslazione e variazione di orientamento devono essere validate usando l'intero Convex Hull della presa. Se una transizione non e completamente valida, deve essere applicata la massima trasformazione non compenetrante e il movimento residuo deve arrestarsi.
+
+**C18 - Termine del supporto e retro fuori ambito.**
+La presa deve arrestarsi quando termina il supporto operativo o non esiste una posa contigua non compenetrante. Il retro del modello e fuori dall'operativita garantita: non e richiesta classificazione automatica e il comportamento non e definito se l'utente forza un percorso geometricamente connesso verso il retro o porta intenzionalmente una presa dietro il modello.

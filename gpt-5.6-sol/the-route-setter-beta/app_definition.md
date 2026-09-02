@@ -39,6 +39,16 @@ Lo spostamento della presa lungo la superficie della parete deve essere controll
 Gli stessi comandi disponibili tramite i bottoni devono essere disponibili anche tramite shortcut da tastiera, prevedi tu l'associazione tra gli shortcut migliori ed i bottoni.
 L'utente può aggiungere qualsiasi presa una sola volta , e può anche rimuoverle dalla parete.
 
+La parete deve essere trattata come una singola superficie fisica continua, anche quando e composta da pannelli piani o inclinati, raccordi, spigoli, diedri, curvature, pance, rientranze o sporgenze. Collisioni, snap e movimento devono dipendere esclusivamente dalla forma effettiva del TriMesh derivato dal modello GLB; non e consentito approssimare l'intera parete con un piano globale, una profondita costante o una normale fissa.
+
+Durante il movimento di una presa agganciata, quando il punto di supporto raggiunge il confine con una superficie contigua avente inclinazione differente, la presa deve passare alla nuova superficie soltanto al contatto locale, entro la tolleranza fisica configurata. Il sistema deve aggiornare automaticamente punto di supporto, normale e inclinazione della presa, conservando la rotazione impostata dall'utente attorno alla normale. Non sono consentiti cambi anticipati di superficie ne trasferimenti verso superfici vicine ma non raggiunte dal movimento.
+
+Ogni transizione tra superfici deve essere verificata usando l'intero collider Convex Hull della presa. Nei diedri, sugli spigoli e nelle rientranze la presa deve adattarsi alla geometria finche posizione e orientamento restano non compenetranti. Se il passaggio completo non e possibile a causa della forma della presa o dell'angolo tra le superfici, il sistema deve applicare la massima trasformazione valida e arrestare il movimento residuo, mantenendo la presa agganciata.
+
+Al bordo esterno in cui termina il supporto operativo o non esiste una posa contigua non compenetrante, la presa deve arrestarsi e non deve continuare nello spazio libero. Il retro del modello e fuori dall'operativita prevista in questa versione. Non e richiesto riconoscerlo o classificarlo automaticamente: se il modello collega geometricamente una superficie laterale al retro e l'utente forza il movimento lungo tale percorso, oppure porta intenzionalmente una presa dietro il modello, movimento, snap e compenetrazione non sono garantiti.
+
+I modelli operativi non devono contenere pavimento ne fori geometrici nelle superfici della parete. Eventuali dettagli che rappresentano fori devono essere realizzati esclusivamente come texture e non come aperture della geometria fisica; non e richiesto alcun riconoscimento o riempimento runtime dei fori. Non sono richiesti ne utilizzati proxy fisici, gruppi semantici o metadati GLB aggiuntivi per collisioni e movimento.
+
 ### Gestione della fisica e del movimento
 
 Per la gestione dei modelli nello spazio tridimensionale, deve essere utilizzato un sistema di coordinate cartesiane destrorso coerente con Three.js.
@@ -54,7 +64,7 @@ Il movimento delle prese sulle pareti deve essere regolato tramite le seguenti r
 - non deve essere presente nessun rimbalzo
 - non deve essere previsto nessun attrito
 - deve essere prevista solo la rilevazione collisioni
-- le prese non possono sovrapporsi, ovvero quando a seguito del movimento di una presa da parte dell'utente, questa entra a contatto con la parete o con altre prese, quella stessa presa non potrà più proseguire il suo movimento nella direzione che porta all'oggetto con cui è entrata in contatto. Una volta agganciata alla parete, la presa può essere traslata esclusivamente lungo la superficie della parete. 
+- le prese non possono sovrapporsi, ovvero quando a seguito del movimento di una presa da parte dell'utente, questa entra a contatto con la parete o con altre prese, quella stessa presa non potrà più proseguire il suo movimento nella direzione che porta all'oggetto con cui è entrata in contatto. Una volta agganciata alla parete, la presa può essere traslata esclusivamente lungo la superficie continua della parete e puo passare tra facce contigue soltanto quando il movimento raggiunge realmente il relativo confine geometrico.
 
 Il movimento delle prese deve essere implementato come movimento cinematico vincolato dalle collisioni. Quando la posizione desiderata genera una collisione, il sistema deve calcolare la massima posizione consentita nella direzione di movimento senza generare compenetrazione, mantenendo disponibili le componenti di movimento nelle direzioni che non generano collisione.
 
@@ -78,7 +88,7 @@ Il catalogo dovrà mostrare un box per ciascuna presa, in ciascun box dovranno e
 L'utente potrà selezionare le prese da muovere o rimuovere dalla scena tramite il click del mouse sulla presa stessa in scena.
 Tutti i modelli delle prese devono avere l'origine del sistema di coordinate locale posizionata nel centro geometrico della superficie posteriore della presa, cioè nel punto di contatto con la parete.
 
-Quando una presa viene avvicinata alla parete, il sistema deve agganciarla automaticamente alla superficie della parete utilizzando il punto di contatto più vicino. La distanza di attivazione dello snap di aggancio alla parete deve essere di 5 CM. La presa deve orientarsi automaticamente seguendo la normale della superficie della parete, mantenendo la base perfettamente aderente alla parete. Dopo l'aggancio automatico l'utente deve poter modificare liberamente la rotazione della presa attorno alla normale della parete e la sua posizione lungo la parete stessa.
+Quando una presa viene avvicinata alla parete, il sistema deve agganciarla automaticamente alla superficie della parete utilizzando il punto euclideo piu vicino sull'intero TriMesh raggiungibile dal movimento corrente. La ricerca non deve dipendere dalla camera e non deve essere limitata alla direzione globale `+Z` o `-Z`. La distanza di attivazione dello snap di aggancio alla parete deve essere di 5 CM. La presa deve orientarsi automaticamente seguendo la normale della superficie della parete, mantenendo la base perfettamente aderente alla parete. Dopo l'aggancio automatico l'utente deve poter modificare liberamente la rotazione della presa attorno alla normale della parete e la sua posizione lungo la parete stessa.
 La normale utilizzata per l'orientamento deve essere calcolata nel punto esatto di contatto della presa con la parete.
 Come base della presa deve essere considerata la parte piatta di fondo della presa stessa, ogni presa è composta da una parte piatta che aderisce alla parete ed una parte variabile di qualsiasi forma che consiste nella parte utilizzata dall'arrampicatore durante l'arrampicata.
 
@@ -101,7 +111,7 @@ Il frontend, al caricamento di ciascun modello di presa, deve richiedere ed util
 
 Il sistema deve mantenere separati collider e mesh grafica, e la scelta del Convex Hull deve privilegiare il rapporto tra accuratezza delle collisioni e prestazioni. Non è richiesto che il collider rappresenti ogni dettaglio geometrico della mesh.
 
-La parete invece deve utilizzare un collider TriMesh derivato direttamente dalla geometria del modello 3D così com'è, senza necessità di precalcolo lato server: trattandosi di un utilizzo diretto dei vertici e triangoli della mesh (senza alcuna riduzione a inviluppo convesso), tale collider può continuare ad essere generato lato client al momento del caricamento della parete.
+La parete invece deve utilizzare un collider TriMesh derivato direttamente dall'intera geometria del modello 3D cosi com'e, includendo tutti i pannelli, raccordi, spigoli e superfici laterali dopo l'applicazione delle trasformazioni gerarchiche del GLB. Non e necessario un precalcolo lato server: trattandosi di un utilizzo diretto dei vertici e triangoli della mesh, senza riduzione a inviluppo convesso o piano frontale, tale collider puo continuare ad essere generato lato client al momento del caricamento della parete.
 Il collider TriMesh della parete deve essere utilizzato esclusivamente come corpo statico e non deve partecipare a simulazioni dinamiche.
 
 

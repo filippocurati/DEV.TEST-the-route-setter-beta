@@ -114,6 +114,12 @@ La camera iniziale viene posizionata sul semiasse `+Z` e orientata verso il cent
 Il frontend non applica euristiche per determinare automaticamente il fronte.
 Eventuali modelli non conformi devono essere corretti prima dell'importazione.
 
+La convenzione `+Z` definisce esclusivamente il fronte generale dell'asset, la camera iniziale e lo spawn. Non puo essere usata come normale costante della parete, unica direzione di raycast, filtro dei triangoli o sostituto del punto piu vicino sul TriMesh.
+
+Il modello parete deve essere un'unita geometricamente connessa e non deve includere pavimento ne aperture geometriche; ogni foro rappresentato deve essere esclusivamente una texture. Non sono richiesti proxy, gruppi semantici o metadati aggiuntivi.
+
+Il retro e fuori dall'operativita garantita. Il frontend non deve introdurre euristiche per classificarlo automaticamente; i flussi e i test obbligatori restano confinati alla superficie raggiungibile dal fronte e dai lati e devono arrestarsi al relativo bordo esterno.
+
 ### Traslazione normale e stato di aggancio
 
 Ogni hold ha due stati: `pre-snap` e `post-snap`.
@@ -122,7 +128,7 @@ Ogni hold ha due stati: `pre-snap` e `post-snap`.
 - In `post-snap`, il comando avanti non ha effetto.
 - In `post-snap`, il comando indietro provoca sgancio: la hold torna all'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e viene riposizionata a `0.25 m` dalla parete lungo la normale locale.
 
-La distanza dalla parete e misurata lungo la normale locale tra pivot posteriore della hold (punto di contatto) e punto piu vicino della parete.
+La distanza dalla parete e la distanza euclidea tra il pivot posteriore della hold e il punto piu vicino sul TriMesh. La normale locale determina orientamento e direzione normale, ma non sostituisce la metrica euclidea.
 
 ### Spawn iniziale pre-snap
 
@@ -152,7 +158,8 @@ A parita di distanza dal centro, l'ordine dei candidati deve essere deterministi
 - all'inserimento, hold in stato non agganciato;
 - spawn iniziale tramite ricerca deterministica: primo candidato frontale centrale con offset `2.0 m`, fallback su griglia frontale con passo `0.30 m` e selezione del primo candidato non compenetrante;
 - inserimento annullato solo dopo esaurimento candidati nel dominio di ricerca (bounding frontale + margine configurabile);
-- query locale verso parete per trovare contatto candidato.
+- query nearest-point sull'intero TriMesh per trovare il contatto candidato, senza dipendenza da `+Z` o dalla camera;
+- shape-cast del Convex Hull contro parete e altre hold quando il volume puo raggiungere un collider.
 
 ### 7.2 Snap
 - condizione: distanza minima <= 0.05 m;
@@ -160,11 +167,52 @@ A parita di distanza dal centro, l'ordine dei candidati deve essere deterministi
 - orientamento con normale locale nel punto esatto;
 - base hold aderente alla parete.
 
+La trasformazione di snap deve essere atomica. La posa finale e le pose intermedie necessarie a coprire traslazione e variazione di orientamento devono essere non compenetranti. Se la trasformazione completa non e valida, la hold resta nell'ultima posa pre-snap valida.
+
 ### 7.3 Degeneri
 - se normale triangolo non valida: fallback su ultima normale valida;
 - se assente: fallback su normale asse mondo configurata;
 - contatti equivalenti: tie-break deterministico stabile;
 - se nessuna posizione valida non compenetrante: annullare inserimento, messaggio utente non tecnico.
+
+### 7.4 Supporto e transizione fra facce
+
+Ogni hold post-snap mantiene almeno:
+
+```text
+featureId corrente
+punto di supporto corrente
+normale corrente
+ultima normale valida
+twist utente
+```
+
+Per ogni passo tangenziale:
+
+1. proiettare gli assi vista sulla tangente del supporto corrente;
+2. eseguire il movimento cinematico fino al primo limite fisico;
+3. mantenere il supporto corrente finche resta valido entro la tolleranza;
+4. quando viene raggiunto un bordo condiviso o il primo contatto fisico con una superficie geometricamente contigua, costruire un candidato di transizione;
+5. aggiornare la normale e conservare il twist;
+6. verificare il Convex Hull nella posa iniziale, in pose intermedie della variazione di orientamento e nella posa finale;
+7. applicare sulla nuova tangente soltanto il residuo del passo non ancora consumato;
+8. se la transizione non e valida, ricercare deterministicamente la massima frazione valida e arrestare il residuo.
+
+Il nearest-point globale non puo da solo autorizzare una transizione post-snap: la nuova faccia deve essere geometricamente contigua alla feature corrente e raggiunta al bordo condiviso o come primo contatto fisico del movimento. In ulteriore parita il tie-break usa un identificatore stabile della feature.
+
+### 7.5 Termine del supporto e retro
+
+Se dopo il passo non esiste una feature contigua che mantenga il supporto con una posa non compenetrante, il movimento deve fermarsi. Non e consentito continuare nello spazio libero.
+
+Non viene implementata classificazione automatica del retro. Su una mesh chiusa non e possibile distinguere genericamente una transizione lato-retro da un'altra adiacenza senza metadati o euristiche, entrambi esclusi da questa versione. Se l'utente forza tale percorso o porta intenzionalmente una hold dietro il modello, acquisizione, transizione, snap e compenetrazione non sono coperti dalle garanzie.
+
+### 7.6 Tolleranze e stabilita
+
+- tolleranza fisica iniziale di riferimento: `0.001 m`, centralizzata e configurabile nel codice;
+- nessun confronto di uguaglianza esatta su punti, distanze o normali;
+- normali non finite o quasi nulle: fallback deterministico secondo §7.3;
+- evitare alternanza fra feature equivalenti conservando il supporto corrente entro tolleranza;
+- il risultato deve dipendere dalla sequenza di input e non dal frame rate.
 
 ## 8. Movimento e input
 
@@ -172,6 +220,7 @@ A parita di distanza dal centro, l'ordine dei candidati deve essere deterministi
 - traslazione: +1/-1 cm per click + continuo a pressione;
 - direzioni calcolate proiettando assi camera sul piano tangente;
 - shortcut tastiera obbligatorie ma mappatura lasciata open guidata.
+- durante una transizione il passo complessivo resta `0.01 m`: la parte consumata sulla faccia precedente viene sottratta prima di applicare il residuo sulla nuova tangente.
 
 ## 9. Export immagine
 

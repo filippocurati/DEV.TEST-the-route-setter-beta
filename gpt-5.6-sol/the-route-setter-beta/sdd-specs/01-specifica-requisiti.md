@@ -57,6 +57,12 @@ GLB obbligatorio; texture/asset opzionali.
 - Rotazione e scala devono essere applicate prima dell'esportazione GLB.
 - Criteri: la camera iniziale posta sul semiasse `+Z` visualizza il fronte arrampicabile senza correzioni automatiche lato applicazione.
 
+**REQ-MOD-006 - Geometria continua della parete.**
+- La parete deve essere un unico modello geometricamente connesso, composto da una superficie continua che puo includere pannelli piani o inclinati, raccordi, spigoli, diedri, curvature, pance, rientranze e sporgenze.
+- I modelli operativi non devono contenere pavimento ne fori geometrici nelle superfici della parete; ogni foro rappresentato deve essere esclusivamente una texture.
+- Non sono richiesti proxy fisici, gruppi semantici o metadati aggiuntivi nel GLB.
+- Criteri: superficie operativa connessa; assenza di pavimento e aperture geometriche; funzionamento senza proxy o metadati semantici; tutta la superficie operativa e rappresentata dai triangoli del modello; nessuna logica applicativa dipende dalla forma specifica del modello corrente.
+
 ## CAT - Catalogo
 
 **REQ-CAT-001 - Catalogo a sinistra.**
@@ -126,10 +132,14 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 - Criteri: rotazione attorno al punto di contatto posteriore.
 
 **REQ-FIS-006 - Snap 5 cm.**
-- Criteri: snap solo se distanza <= 0.05 m; no snap oltre soglia.
+- La distanza di snap e la distanza euclidea tra il pivot posteriore della hold e il punto piu vicino ammissibile sull'intero TriMesh.
+- La ricerca non deve dipendere dalla camera e non deve essere limitata alla direzione globale `+Z` o `-Z`.
+- Criteri: snap solo se distanza <= 0.05 m; no snap oltre soglia; snap verificato su pannelli frontali, inclinati e superfici laterali.
 
 **REQ-FIS-007 - Movimento post-snap e sgancio controllato.**
-- Criteri: in stato post-snap la hold resta aderente alla parete e i movimenti standard restano tangenziali; il comando avanti non produce effetti; il comando indietro provoca lo sgancio, ripristina l'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e riposiziona automaticamente la hold a distanza `0.25 m` dalla parete lungo la normale locale (`0.05 m` soglia snap + `0.20 m` margine).
+- In stato post-snap la hold resta aderente alla superficie continua e i movimenti standard restano tangenziali alla normale del supporto corrente.
+- Quando il movimento raggiunge una faccia contigua con normale differente, il supporto puo passare alla nuova faccia secondo `REQ-FIS-016`.
+- Criteri: il comando avanti non produce effetti; il comando indietro provoca lo sgancio, ripristina l'orientamento iniziale completo dell'istanza e riposiziona automaticamente la hold a distanza `0.25 m` dalla parete lungo la normale locale (`0.05 m` soglia snap + `0.20 m` margine).
 
 **REQ-FIS-008 - Inclinazione non manuale.**
 - Criteri: nessun controllo UI modifica tilt indipendente dalla normale.
@@ -138,16 +148,20 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 - Criteri: 1 grado/click + continuo a pressione; shortcut equivalenti.
 
 **REQ-FIS-010 - Traslazione input.**
-- Criteri: 1 cm/click + continuo a pressione; direzioni da proiezione assi vista su piano tangente.
+- Criteri: 1 cm/click + continuo a pressione; direzioni da proiezione assi vista sul piano tangente del supporto corrente; in una transizione l'eventuale residuo del passo viene riproiettato sulla tangente della nuova faccia.
 
 **REQ-FIS-011 - No compenetrazione.**
-- Criteri: hold non attraversa parete ne altra hold.
+- L'intero Convex Hull deve essere verificato durante traslazione, variazione di orientamento, snap e transizione fra superfici.
+- La sola validita della posa finale non e sufficiente quando il percorso intermedio puo attraversare un collider.
+- Criteri: hold non attraversa parete ne altra hold; nessuna posa intermedia testata presenta penetrazione superiore alla tolleranza fisica.
 
 **REQ-FIS-012 - Separazione mesh/collider.**
 - Criteri: fisica usa solo collider Rapier.
 
 **REQ-FIS-013 - Parete TriMesh statica client-side.**
-- Criteri: collider parete derivato da vertici/triangoli parete lato client.
+- Il collider deve includere tutti i pannelli, raccordi, spigoli e superfici laterali dopo l'applicazione delle trasformazioni gerarchiche del GLB.
+- Nessuna superficie puo essere esclusa perche la propria normale non e parallela a `+Z`.
+- Criteri: collider parete derivato da tutti i vertici/triangoli utilizzabili lato client; collision query positive su facce con normali globali differenti.
 
 **REQ-FIS-014 - Pre-snap e degeneri (deterministici).**
 - Criteri: fallback normale (triangolo -> ultima valida -> asse mondo), tie-break stabile su contatti equivalenti, annullamento inserimento se nessuna posizione valida non compenetrante.
@@ -156,6 +170,30 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 - In stato pre-snap devono essere disponibili i comandi avanti/indietro lungo la normale locale della parete.
 - Velocita: `1 cm/click` + movimento continuo a pressione.
 - Criteri: durante avanti/indietro devono essere rispettate tutte le regole anti-collisione e anti-compenetrazione; una hold non attraversa parete ne altre hold.
+
+**REQ-FIS-016 - Transizione fra superfici contigue.**
+- In post-snap il sistema deve mantenere il triangolo o la feature di supporto corrente.
+- Il passaggio a una faccia con inclinazione diversa e consentito soltanto quando il movimento raggiunge un bordo condiviso o il primo contatto fisico con una superficie geometricamente contigua, entro la tolleranza configurata.
+- Il sistema deve aggiornare punto di supporto, normale e inclinazione, conservando il twist dell'utente attorno alla normale.
+- Non sono consentiti cambi anticipati, salti verso superfici vicine ma non raggiunte, o selezioni determinate dalla camera.
+- Criteri: transizione deterministica fra pannelli contigui; nessuna transizione prima del contatto; il residuo del passo viene applicato sulla nuova tangente senza superare il passo totale richiesto.
+
+**REQ-FIS-017 - Diedri, spigoli e massima trasformazione valida.**
+- Ogni transizione deve validare il Convex Hull nella posa iniziale, in pose intermedie sufficienti a coprire la rotazione e nella posa finale.
+- Se la forma della hold o l'angolo del diedro impediscono la transizione completa, il sistema deve trovare la massima trasformazione non compenetrante, arrestare il residuo e mantenere la hold agganciata.
+- Criteri: passaggio consentito su spigolo o raccordo quando esiste un percorso valido; arresto deterministico nei diedri non percorribili; nessuno sgancio automatico; se `f` e la frazione applicata del passo, la posa a `f` e valida e, salvo `f = 1`, la posa a `f` incrementata della tolleranza configurata e non valida.
+
+**REQ-FIS-018 - Termine del supporto e retro fuori ambito.**
+- Quando termina il supporto operativo o non esiste una posa contigua non compenetrante, la hold deve arrestarsi senza continuare nello spazio libero.
+- Il retro non e classificato automaticamente e non fa parte dell'operativita garantita in questa versione.
+- Non e richiesto impedire transizioni, compenetrazioni o snap non corretti quando il modello collega geometricamente lato e retro e l'utente forza tale percorso, oppure porta intenzionalmente una hold dietro il modello.
+- Criteri: arresto dove termina il supporto nei flussi operativi frontali e laterali; nessun test obbligatorio di classificazione, snap o movimento sul retro.
+
+**REQ-FIS-019 - Continuita numerica del supporto.**
+- Le uguaglianze geometriche esatte non devono essere usate come condizione di transizione.
+- Contatto, adiacenza e arresto devono usare tolleranze espresse in metri e documentate nel design.
+- Le normali devono essere finite e stabilizzate quanto necessario a evitare oscillazioni tra facce equivalenti, senza cancellare cambi di inclinazione reali.
+- Criteri: nessun NaN; nessuna oscillazione ripetuta tra due supporti a parita di input; risultato indipendente dal frame rate.
 
 ## HUL - Convex Hull backend
 
@@ -293,10 +331,13 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 **REQ-TST-007 - Determinismo test fisici.**
 
 **REQ-TST-008 - Test snap e degeneri completi.**
-- Criteri: no snap oltre 5 cm, snap entro 5 cm, normale del punto di contatto corretta, rotazione post-snap attorno alla normale, movimento tangenziale post-snap, fallback normale deterministico, tie-break deterministico.
+- Criteri: no snap oltre 5 cm, snap entro 5 cm, normale del punto di contatto corretta, rotazione post-snap attorno alla normale, movimento tangenziale post-snap, fallback normale deterministico e tie-break deterministico. Le regressioni multi-superficie aggiunte dopo la FASE 8 appartengono a `REQ-TST-010`.
 
 **REQ-TST-009 - Verifica lockfile CI.**
 - Criteri: CI usa lockfile, fallisce con drift dipendenze.
+
+**REQ-TST-010 - Regressione parete multi-superficie.**
+- Criteri: fixture sintetica con pannello frontale, pannello inclinato, superficie laterale, spigolo convesso, diedro concavo e termine del supporto; transizione soltanto fra facce contigue e non anticipata; rifiuto di superfici vicine non contigue; conservazione del twist; rispetto del passo totale; massima frazione valida entro tolleranza; nessuna oscillazione; indipendenza dal frame rate; E2E sul modello reale per almeno una transizione fra inclinazioni differenti. Il retro e escluso dai test obbligatori.
 
 ## DOC - Documentazione
 

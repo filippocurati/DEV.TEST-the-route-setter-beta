@@ -43,8 +43,11 @@ FASE 0 (Setup)
                |
                v
          FASE 9 (Frontend: export immagine)
-               |
-               v
+                |
+                v
+         FASE 9A (Continuita multi-superficie)
+                |
+                v
          FASE 10 (Test completo)
                |
                v
@@ -55,6 +58,7 @@ FASE 0 (Setup)
 ```
 
 Nota: FASE 1 e FASE 2 possono procedere in parallelo dopo FASE 0, ma entrambe devono essere complete prima delle fasi frontend che dipendono da API/collider.
+La FASE 9A e una fase correttiva obbligatoria introdotta dopo il completamento originario della FASE 9 e deve essere chiusa prima di iniziare la FASE 10.
 
 ---
 
@@ -429,6 +433,66 @@ Produrre JPG guida conforme alle specifiche.
 
 ---
 
+## FASE 9A - Continuita multi-superficie e hardening geometrico
+
+### Obiettivo
+Rendere collisioni, snap e movimento post-snap indipendenti dalla forma specifica della parete e consentire transizioni locali fra superfici contigue con inclinazioni differenti.
+
+### Requisiti SDD coperti
+- `REQ-MOD-006`
+- `REQ-FIS-006`, `REQ-FIS-007`, `REQ-FIS-010`, `REQ-FIS-011`, `REQ-FIS-013`
+- `REQ-FIS-016..019`
+- `REQ-TST-010`
+- Principi `C8`, `C16`, `C17`, `C18`
+
+### Vincoli e specifiche da garantire
+- nearest-point euclideo sull'intero TriMesh, indipendente da camera e `+Z`;
+- tracking deterministico della feature di supporto post-snap;
+- transizione soltanto al bordo condiviso o al primo contatto fisico con una superficie geometricamente contigua;
+- conservazione del twist e aggiornamento automatico della normale;
+- consumo del residuo del passo sulla tangente della nuova faccia;
+- validazione del Convex Hull lungo traslazione e variazione di orientamento;
+- massima trasformazione valida nei diedri non percorribili;
+- arresto al bordo esterno;
+- nessuna classificazione automatica o garanzia sul retro;
+- nessun requisito runtime di riconoscimento o chiusura fori.
+
+### Task implementativi
+- mantenere nello stato hold feature, punto e normale di supporto;
+- costruire o ricavare l'adiacenza necessaria fra triangoli del TriMesh;
+- separare nearest-point globale da autorizzazione della transizione post-snap;
+- implementare transizione locale e riproiezione del residuo del passo;
+- verificare pose intermedie durante il cambio di normale;
+- implementare ricerca deterministica della massima frazione valida;
+- introdurre arresto quando non esiste un supporto contiguo valido;
+- centralizzare tolleranze geometriche in metri;
+- aggiungere fixture sintetica multi-superficie indipendente dall'asset reale;
+- mantenere un E2E sul GLB reale come regressione integrativa.
+
+### Test da eseguire
+- snap su pannello frontale, inclinato e laterale;
+- movimento su una superficie curva o triangolata mantenendo supporto stabile;
+- transizione pannello-pannello soltanto al contatto;
+- transizione su spigolo convesso con posa valida;
+- arresto in diedro concavo quando il Convex Hull non puo passare;
+- nessuna transizione verso superficie vicina ma non contigua;
+- conservazione del twist durante il cambio di normale;
+- rispetto del passo totale di `0.01 m` durante la transizione;
+- arresto al termine del supporto senza uscita nello spazio libero;
+- comportamento deterministico e indipendente dal frame rate;
+- E2E sul modello reale per attraversamento di almeno un cambio di inclinazione.
+
+### Definition of Done
+- nessuna assunzione applicativa sulla forma specifica del modello parete corrente;
+- tutti i test `REQ-TST-010` verdi;
+- nessuna compenetrazione lungo i percorsi coperti;
+- transizioni locali ripetibili e senza oscillazioni;
+- bordo esterno bloccante nei flussi operativi;
+- limite sul retro documentato e non ampliato oltre quanto definito da `REQ-FIS-018`;
+- build frontend e suite completa esistente verdi.
+
+---
+
 ## FASE 10 - Test completo e quality gates
 
 ### Obiettivo
@@ -436,6 +500,7 @@ Chiudere copertura automatica completa e verifiche di regressione.
 
 ### Requisiti SDD coperti
 - `REQ-TST-001..009`
+- `REQ-TST-010`
 - collegamenti da `04-tracciabilita.md` su tutti i domini.
 
 ### Vincoli e specifiche da garantire
@@ -453,6 +518,7 @@ Chiudere copertura automatica completa e verifiche di regressione.
 - esecuzione completa suite locale e CI;
 - regressione collisioni e snap;
 - regressione ciclo pre-snap/post-snap con avanti/indietro, no-op avanti post-snap e sgancio su indietro.
+- regressione transizioni multi-superficie introdotte dalla FASE 9A.
 
 ### Definition of Done
 - suite completa verde;
@@ -521,7 +587,7 @@ Completare documentazione tecnica e operativa conforme ai requisiti.
 
 Prima di considerare chiuso il lavoro:
 - controllare copertura completa della matrice `sdd-specs/04-tracciabilita.md`;
-- verificare assenza violazioni costituzionali (`C1..C15`);
+- verificare assenza violazioni costituzionali (`C1..C18`);
 - confermare nessuna funzionalita extra non richiesta (autenticazione/persistenza);
 - confermare conformita naming hold `Hold<number>` in codice, test, docs;
 - confermare pipeline CI completamente verde.
