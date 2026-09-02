@@ -30,13 +30,13 @@ Tutti i file descritti devono essere considerati come file statici da caricare i
 
 L'applicazione dovrà presentare un ambiente 3D in cui le pareti su cui tracciare le vie e le prese da utilizzare per la tracciatura sono modelli 3D.
 La versione corrente dell'applicazione deve gestire una sola parete per sessione, quindi un solo modello 3d della parete. La parete deve essere caricata automaticamente all'avvio dell'applicazione utilizzando il modello disponibile nella cartella "main-wall".
-L'utente dovrà poter scegliere le prese da utilizzare da un catalogo, e tramite appositi bottoni, spostarle sulle pareti adeguando posizione e rotazione sulla parete.
+L'utente dovrà poter scegliere le prese da utilizzare da un catalogo e gestirle tramite un menu contestuale visualizzato in prossimita della presa selezionata.
 Le prese saranno tutte disponibili in un apposito menu che consiste nel catalogo delle prese. Quando l'utente seleziona una presa e la aggiunge alla scena, questa presa verrà rimossa dal catalogo e renderizzata nella scena.
 L'utente deve avere la possibilità di rimuovere dalla scena una presa, selezionandola nella scena con il mouse e cliccando su un apposito bottone che la rimuoverà dalla scena riportandola nel catalogo.
-L'inclinazione della presa rispetto alla superficie della parete non è modificabile dall'utente, poiché deve essere determinata automaticamente dalla normale della superficie nel punto di contatto.
-L'utente può invece ruotare liberamente la presa attorno alla normale della superficie della parete. La rotazione deve essere controllabile tramite due appositi pulsanti, uno per la rotazione oraria e uno per la rotazione antioraria, con incremento di 1 grado per ogni click e modalità di rotazione continua quando il pulsante rimane premuto.
-Lo spostamento della presa lungo la superficie della parete deve essere controllabile tramite quattro appositi pulsanti direzionali (su, giù, sinistra, destra), che muovono la presa lungo gli assi tangenti alla superficie della parete nel punto di contatto corrente. Ogni click deve produrre uno spostamento di 1 centimetro nella direzione selezionata, con modalità di movimento continuo quando il pulsante rimane premuto, in modo coerente con il comportamento già definito per la rotazione. La direzione "su/giù" e "sinistra/destra" deve essere calcolata proiettando gli assi verticale e orizzontale della vista corrente sul piano tangente alla parete nel punto di contatto, in modo che il movimento risulti sempre intuitivo rispetto a ciò che l'utente vede a schermo, indipendentemente dall'orientamento della parete o della posizione della camera. Anche questi comandi devono essere disponibili tramite shortcut da tastiera, coerenti con quelli già previsti per la rotazione.
-Gli stessi comandi disponibili tramite i bottoni devono essere disponibili anche tramite shortcut da tastiera, prevedi tu l'associazione tra gli shortcut migliori ed i bottoni.
+L'inclinazione della presa rispetto alla superficie della parete non è modificabile direttamente dall'utente, poiché deve essere determinata automaticamente dalla normale della superficie nel punto di aggancio.
+Alla selezione della presa deve comparire un popup contestuale, ancorato alla sua posizione visibile, con le azioni `Aggancia`, `Sgancia`, `Ruota`, `Sposta` e `Rimuovi`. Tutte le azioni restano visibili e sono abilitate o disabilitate in funzione dello stato della presa. Il popup deve seguire la presa durante movimento, orbit, zoom, pan e resize; deve essere nascosto durante la modalita di targeting e durante l'esportazione dell'immagine.
+Una presa non agganciata abilita `Aggancia` e `Rimuovi`. Una presa agganciata abilita `Sgancia`, `Ruota`, `Sposta` e `Rimuovi`. Le modalita di interazione sono mutuamente esclusive e sono `idle`, `attach-targeting`, `moving` e `rotating`.
+Non devono esistere shortcut globali da tastiera per spostare o ruotare le prese. I pulsanti del popup (`Aggancia`, `Sgancia`, `Ruota`, `Sposta`, `Rimuovi`) devono comunque essere raggiungibili tramite tastiera con i normali meccanismi di accessibilita del browser (`Tab`, `Enter`, `Space`): si tratta di azioni semantiche, anche quando producono un cambio di stato o un riposizionamento diretto. Sono invece mouse-only le trasformazioni incrementali prodotte dalle frecce di movimento e dal gizmo di rotazione. Il tasto `Escape` annulla `attach-targeting` e termina le modalita `moving` o `rotating`, mantenendo selezione e popup; un hint visibile deve comunicare questa possibilita.
 L'utente può aggiungere qualsiasi presa una sola volta , e può anche rimuoverle dalla parete.
 
 ### Gestione della fisica e del movimento
@@ -47,18 +47,18 @@ Tutti i modelli devono essere espressi in metri.
 
 Il movimento delle prese sulle pareti deve essere regolato tramite le seguenti regole fisiche:
 - la gravità deve essere disabilitata
-- le prese devono essere considerate corpi rigidi statici durante il posizionamento
+- le prese devono essere considerate corpi rigidi cinematici durante il posizionamento
 - la collision detection deve essere continua
 - non deve essere presente nessuna simulazione dinamica
 - non deve essere presente nessuna inerzia
 - non deve essere presente nessun rimbalzo
 - non deve essere previsto nessun attrito
 - deve essere prevista solo la rilevazione collisioni
-- le prese non possono sovrapporsi, ovvero quando a seguito del movimento di una presa da parte dell'utente, questa entra a contatto con la parete o con altre prese, quella stessa presa non potrà più proseguire il suo movimento nella direzione che porta all'oggetto con cui è entrata in contatto. Una volta agganciata alla parete, la presa può essere traslata esclusivamente lungo la superficie della parete. 
+- le prese non possono sovrapporsi. Il contatto superficiale con la parete e valido; quando il movimento o la rotazione produrrebbe una penetrazione superiore alla tolleranza numerica di 0,001 m nella parete o in un'altra presa, la trasformazione deve fermarsi all'ultima posa valida. L'intero modello della parete, indipendentemente da forma, inclinazione, prominenza, curvatura o cavita, e un ostacolo fisico impenetrabile. Il retro non viene distinto semanticamente e il comportamento di aggancio sul retro resta fuori ambito.
 
 Il movimento delle prese deve essere implementato come movimento cinematico vincolato dalle collisioni. Quando la posizione desiderata genera una collisione, il sistema deve calcolare la massima posizione consentita nella direzione di movimento senza generare compenetrazione, mantenendo disponibili le componenti di movimento nelle direzioni che non generano collisione.
 
-Per l'implementazione di questo comportamento deve essere utilizzato il KinematicCharacterController messo a disposizione nativamente da Rapier, che implementa già la logica di "move and slide" richiesta: blocco della componente di movimento che genererebbe compenetrazione, mantenimento libero delle componenti di movimento che non generano collisione, gestione della tolleranza di contatto tra le superfici. Non deve essere implementata una logica di collision-response custom, salvo che le funzionalità native del controller risultino insufficienti rispetto ai casi descritti in questo documento. Poiché il controller è pensato in origine anche per personaggi soggetti a gravità (con funzionalità come autostep o snap-to-ground), deve essere configurato escludendo tali comportamenti, non pertinenti al caso d'uso descritto in cui non è prevista gravità. Si raccomanda di fare riferimento alla documentazione ufficiale di Rapier.js aggiornata per la sintassi esatta dell'API, che può variare tra le versioni della libreria.
+Per l'implementazione di questo comportamento devono essere utilizzate le query cinematiche native di Rapier, incluso il KinematicCharacterController quando adatto e shape-cast/contact query quando necessari per validare trasformazioni, rotazioni o posizionamenti diretti. Autostep e snap-to-ground devono essere disabilitati. La logica custom deve coordinare le query native senza introdurre dinamica, impulsi o risposta fisica non richiesta.
 
 ## GESTIONE PRESE E PARETI
 
@@ -78,9 +78,35 @@ Il catalogo dovrà mostrare un box per ciascuna presa, in ciascun box dovranno e
 L'utente potrà selezionare le prese da muovere o rimuovere dalla scena tramite il click del mouse sulla presa stessa in scena.
 Tutti i modelli delle prese devono avere l'origine del sistema di coordinate locale posizionata nel centro geometrico della superficie posteriore della presa, cioè nel punto di contatto con la parete.
 
-Quando una presa viene avvicinata alla parete, il sistema deve agganciarla automaticamente alla superficie della parete utilizzando il punto di contatto più vicino. La distanza di attivazione dello snap di aggancio alla parete deve essere di 5 CM. La presa deve orientarsi automaticamente seguendo la normale della superficie della parete, mantenendo la base perfettamente aderente alla parete. Dopo l'aggancio automatico l'utente deve poter modificare liberamente la rotazione della presa attorno alla normale della parete e la sua posizione lungo la parete stessa.
-La normale utilizzata per l'orientamento deve essere calcolata nel punto esatto di contatto della presa con la parete.
+L'aggancio deve essere richiesto esplicitamente dall'utente tramite il popup contestuale e il targeting descritto di seguito. La presa deve orientarsi automaticamente seguendo la normale stabilizzata della superficie scelta, mantenendo la base aderente alla parete. Dopo l'aggancio l'utente deve poter ruotare la presa attorno alla normale di aggancio e spostarla sulla stessa superficie locale entro la tolleranza angolare prevista.
+La normale utilizzata per l'orientamento deve essere calcolata nella zona di contatto scelta dall'utente.
 Come base della presa deve essere considerata la parte piatta di fondo della presa stessa, ogni presa è composta da una parte piatta che aderisce alla parete ed una parte variabile di qualsiasi forma che consiste nella parte utilizzata dall'arrampicatore durante l'arrampicata.
+
+### Aggancio contestuale tramite targeting
+
+Dalla fase 9UX lo snap automatico per avvicinamento e i comandi avanti/indietro sono sostituiti dall'azione esplicita `Aggancia`. Premendo `Aggancia`, l'applicazione entra nella modalita `attach-targeting`: il popup viene nascosto, il puntatore sinistro e riservato alla selezione del target, mentre rotazione/pan tramite tasto destro e zoom tramite rotella restano disponibili. Il posizionamento e diretto: non deve essere simulato ne validato il percorso fra la posizione detached e il target, ma devono essere validate integralmente la posa finale e le collisioni.
+
+Muovendo il mouse sulla parete deve comparire un cerchio target DOM/SVG, pieno e trasparente, di colore giallo, che lascia visibile la parete sottostante. La sua dimensione deriva dalla proiezione della base della presa, con limiti visivi minimi e massimi definiti nel design. Il cerchio non deve far parte della scena Three.js e non deve comparire nell'immagine esportata.
+
+Al click, il cerchio viene campionato mediante 37 raggi deterministici dalla camera verso la parete. Tutti i triangoli del modello sono candidabili, indipendentemente da inclinazione, forma, curvatura, prominenza o cavita. Gli hit sono raggruppati per prossimita, continuita locale e compatibilita delle normali. Ogni campione ha peso unitario e vince il gruppo che contiene il maggior numero di campioni validi. Non e richiesta una percentuale minima di copertura: se pochi campioni colpiscono la parete e tutti appartengono allo stesso gruppo, quel gruppo e dominante. In caso di parita prevalgono nell'ordine il gruppo contenente il centro del cerchio, quello piu vicino alla camera e l'identificatore stabile piu basso.
+
+Il punto candidato appartiene al gruppo dominante ed e scelto in modo deterministico vicino al centro del cerchio. La normale e stabilizzata sui campioni del gruppo, con tolleranza angolare iniziale di 5 gradi per assorbire rumore e piccole curvature. L'asse locale `+Z` della presa rappresenta la direzione uscente dalla base e deve essere allineato alla normale candidata; il twist corrente deve essere conservato.
+
+Tutta la geometria della parete e candidabile all'aggancio, ma la posa e accettata soltanto se l'intero Convex Hull della presa non compenetra parete o altre prese. Il contatto superficiale e valido; e invalida una penetrazione superiore a 0,001 m. Se la posa e invalida, il cerchio diventa rosso e l'aggancio viene annullato senza spostare la presa; la modalita resta attiva e al successivo movimento del mouse il cerchio torna giallo. `Escape` annulla la modalita senza modificare la presa.
+
+### Sgancio contestuale
+
+`Sgancia` e disponibile soltanto per una presa agganciata. Il sistema ripristina l'orientamento detached iniziale e cerca una posa lungo la normale uscente del punto di aggancio, iniziando a 0,50 m dalla parete. Se la posa non e valida, deve arretrare di ulteriori 0,10 m e ripetere la verifica fino a 10 m. Se nessuna posa valida e disponibile entro tale dominio, la presa resta agganciata e viene mostrato un messaggio non tecnico. Non deve essere usata come fallback la posizione iniziale di aggiunta alla scena.
+
+### Rotazione contestuale
+
+`Ruota` e disponibile soltanto per una presa agganciata. Attivandolo vengono mostrate due frecce circolari DOM/SVG attorno al bounding box proiettato della presa. Un click produce una rotazione di 1 grado nel verso indicato; il trascinamento produce una rotazione continua quantizzata a passi di 1 grado. La rotazione avviene esclusivamente attorno alla normale di aggancio e si arresta all'ultimo angolo valido prima di una compenetrazione. La modalita resta attiva fino a `Escape`; durante il drag il pointer e catturato e OrbitControls non deve reagire allo stesso pointer.
+
+### Movimento contestuale
+
+`Sposta` e disponibile soltanto per una presa agganciata. Attivandolo vengono mostrate quattro frecce DOM/SVG ai bordi del bounding box proiettato della presa. Le frecce rappresentano alto, basso, destra e sinistra rispetto alla vista corrente; ogni click muove di 1 cm e la pressione prolungata ripete il comando. Non esistono movimenti avanti/indietro.
+
+La presa deve seguire piccole variazioni locali della superficie curva per restare aderente, ma non deve passare a una superficie con inclinazione significativamente diversa. La superficie corrente resta definita rispetto alla normale memorizzata all'aggancio: sono ammesse normali candidate entro 5 gradi da tale normale. Raggiunto un diedro, uno spigolo, una prominenza o un cambio di inclinazione oltre tale tolleranza, il movimento deve fermarsi all'ultima posa non compenetrante. Per cambiare superficie l'utente deve usare `Sgancia` e poi `Aggancia`. La modalita resta attiva fino a `Escape`.
 
 Ogni oggetto presente nella scena deve essere composto da due elementi distinti:
 - una mesh grafica utilizzata esclusivamente per il rendering tramite Three.js
@@ -110,9 +136,7 @@ Il collider TriMesh della parete deve essere utilizzato esclusivamente come corp
 La UI dell'applicazione deve essere semplice e moderna.
 Il pannello "Catalogo prese", posizionato sulla sinistra dello schermo, deve mostrare l'elenco delle prese disponibili una sotto l'altra, con i contenuti e i comandi già descritti nella sezione "Catalogo prese ed istanze".
 Tutto il resto dello spazio disponibile nella UI deve essere utilizzato per visualizzare il modello 3D della parete su cui tracciare e muovere le prese.
-In un menu generico disposto nella parte superiore dell'interfaccia grafica, devono essere previsti due bottoni:
-- bottone "Genera immagine" per creare l'immagine guida per il tracciatore
--  bottone "Rimuovi presa" che rimuove la presa selezionata dalla scena e la riporta nel catalogo.
+Nel menu superiore deve essere presente il bottone `Genera immagine`. L'azione `Rimuovi` appartiene esclusivamente al popup contestuale della presa selezionata e rimuove mesh, collider e istanza, riportando la presa nel catalogo.
 
 ### Gestione della camera
 La navigazione della scena deve essere implementata tramite OrbitControls di Three.js. L'utente deve poter ruotare liberamente attorno alla parete, effettuare lo zoom ed eseguire il pan della scena mantenendo sempre la parete come punto centrale dell'osservazione.

@@ -103,7 +103,7 @@ Flusso:
 - mondo Rapier con gravita zero;
 - parete: TriMesh statico client-side;
 - hold: collider Convex Hull da backend;
-- movimento: `KinematicCharacterController` per move-and-slide;
+- movimento cinematico: `KinematicCharacterController`, shape-cast e contact query Rapier secondo il tipo di trasformazione;
 - no autostep/snap-to-ground.
 
 ### Convenzione spaziale degli asset
@@ -114,17 +114,23 @@ La camera iniziale viene posizionata sul semiasse `+Z` e orientata verso il cent
 Il frontend non applica euristiche per determinare automaticamente il fronte.
 Eventuali modelli non conformi devono essere corretti prima dell'importazione.
 
-### Traslazione normale e stato di aggancio
+### Stato fisico e modalita di interazione 9UX
 
-Ogni hold ha due stati: `pre-snap` e `post-snap`.
+Ogni hold ha due stati fisici:
 
-- In `pre-snap`, i comandi `SHIFT+Freccia Su` e `SHIFT+Freccia Giu` traslano la hold lungo la normale locale della parete (`1 cm/click` + continuo a pressione), nel rispetto dei vincoli anti-collisione.
-- In `post-snap`, il comando avanti non ha effetto.
-- In `post-snap`, il comando indietro provoca sgancio: la hold torna all'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e viene riposizionata a `0.25 m` dalla parete lungo la normale locale.
+- `detached`: disponibile per targeting diretto o rimozione;
+- `attached`: aderente a punto e normale memorizzati, disponibile per sgancio, movimento, rotazione o rimozione.
 
-La distanza dalla parete e misurata lungo la normale locale tra pivot posteriore della hold (punto di contatto) e punto piu vicino della parete.
+La UI mantiene una modalita globale mutuamente esclusiva:
 
-### Spawn iniziale pre-snap
+- `idle`;
+- `attach-targeting`;
+- `moving`;
+- `rotating`.
+
+Ogni cambio modalita interrompe timer, drag e pointer capture della modalita precedente. `Escape` torna a `idle` senza deselezionare la hold. Il cambio selezione termina la modalita attiva e apre il popup per la nuova selezione.
+
+### Spawn iniziale detached
 
 Il riferimento dello spawn non e il centro volumetrico della parete.
 
@@ -146,32 +152,170 @@ La ricerca e limitata all'area frontale proiettata della parete (bounding fronta
 
 A parita di distanza dal centro, l'ordine dei candidati deve essere deterministico: alto, destra, basso, sinistra, quindi diagonali in senso orario.
 
-## 7. Snap, pre-snap e degeneri (vincolante)
+## 7. Targeting, aggancio e validazione (vincolante dalla fase 9UX)
 
-### 7.1 Pre-snap
-- all'inserimento, hold in stato non agganciato;
-- spawn iniziale tramite ricerca deterministica: primo candidato frontale centrale con offset `2.0 m`, fallback su griglia frontale con passo `0.30 m` e selezione del primo candidato non compenetrante;
-- inserimento annullato solo dopo esaurimento candidati nel dominio di ricerca (bounding frontale + margine configurabile);
-- query locale verso parete per trovare contatto candidato.
+### 7.1 Target pointer e overlay
 
-### 7.2 Snap
-- condizione: distanza minima <= 0.05 m;
-- aggancio al punto di contatto piu vicino;
-- orientamento con normale locale nel punto esatto;
-- base hold aderente alla parete.
+Il target e un elemento DOM/SVG nel contenitore viewport, non un oggetto Three.js.
 
-### 7.3 Degeneri
-- se normale triangolo non valida: fallback su ultima normale valida;
-- se assente: fallback su normale asse mondo configurata;
-- contatti equivalenti: tie-break deterministico stabile;
-- se nessuna posizione valida non compenetrante: annullare inserimento, messaggio utente non tecnico.
+Dimensionamento:
+
+1. ricavare il footprint locale della base dai vertici del Convex Hull nella fascia `localZ <= minZ + max(0.002 m, 2% della profondita)`;
+2. se la fascia non contiene almeno tre vertici non collineari, usare come fallback l'estensione XY completa del Convex Hull;
+3. proiettarne la dimensione nella camera corrente alla profondita del punto centrale colpito;
+4. usare il diametro maggiore proiettato;
+5. clamp fra `48 px` e `160 px`.
+
+Durante `pointermove`:
+
+- accumulare l'ultimo evento;
+- aggiornare al massimo una volta per `requestAnimationFrame`;
+- usare un solo ray Rapier camera-verso-TriMesh per posizione e visibilita del cerchio;
+- non eseguire validazione completa della posa.
+
+Al click eseguire i 37 campioni definiti da `REQ-UX-004`. I campioni sono espressi in coordinate normalizzate del cerchio e trasformati in coordinate canvas prima di costruire i ray camera.
+
+### 7.2 Raggruppamento superficie dominante
+
+Ogni hit Rapier sul TriMesh contiene almeno:
+
+```text
+point
+normal
+distanceFromCamera
+featureId stabile quando disponibile
+sampleWeight
+containsCenterSample
+```
+
+Il clustering e deterministico:
+
+1. ordinare gli hit per indice campione;
+2. assegnare ID stabile `mesh traversal index + triangle index` a ogni hit;
+3. costruire sul pattern dei 37 campioni un grafo di adiacenza deterministico: numerare ogni anello in senso orario da angolo zero; collegare il centro a tutti i 6 punti del primo anello; collegare ogni punto ai due vicini circolari dello stesso anello; fra anelli consecutivi collegare ciascun punto ai due punti il cui angolo polare racchiude il suo angolo, includendo gli estremi e applicando wrap-around a 360 gradi;
+4. unire tramite union-find, elaborato per coppie ordinate `(indiceMinore, indiceMaggiore)`, solo coppie adiacenti nel grafo con distanza world <= diametro fisico della base e differenza delle normali <= `5 gradi`; questa connettivita del grafo definisce interamente la componente locale e non richiede adiacenza globale dei triangoli;
+5. la chiusura transitiva delle unioni definisce una componente locale, senza richiedere topologia globale del TriMesh;
+6. aggiornare la normale rappresentativa tramite media normalizzata dei campioni del gruppo;
+7. scegliere il gruppo con il maggior numero di campioni, tutti a peso unitario;
+8. definire per ogni gruppo `distance = minima distanza camera dei membri` e `stableId = minimo ID dei membri`;
+9. applicare i tie-break `contiene campione centrale -> distance minore -> stableId minore`.
+
+L'assenza di una soglia minima e intenzionale: i campioni mancanti non votano contro i campioni che colpiscono la parete. Nel gruppo vincente il punto candidato e il membro a distanza schermo minima dal centro del cerchio; in parita prevale l'indice campione minore.
+
+### 7.3 Commit diretto
+
+Il commit costruisce:
+
+```text
+position = punto candidato
+rotation = align(local +Z, normal) + twist
+```
+
+La trasformazione detached-target e un teletrasporto editoriale: il percorso non viene interrogato. La posa finale viene validata mediante il Convex Hull contro il TriMesh parete e tutti i collider hold. Il contatto e valido e la penetrazione massima tollerata e `0.001 m`, centralizzata. Una posa valida viene applicata atomicamente; una posa invalida non modifica corpo, mesh o stato.
+
+### 7.4 Sgancio
+
+I candidati sono:
+
+```text
+contactPoint + normal * (0.50 + index * 0.10)
+```
+
+per distanza `<= 10 m`. Ogni candidato usa l'orientamento detached iniziale e viene validato contro parete e hold. Lo sgancio e un riposizionamento editoriale diretto: non viene simulato il percorso fino al candidato. Il primo candidato finale valido viene applicato. Se il dominio e esaurito, nessuna trasformazione viene applicata.
+
+### 7.5 Movimento sulla stessa superficie
+
+Lo stato attached memorizza:
+
+```text
+attachmentPoint
+attachmentNormal
+currentPoint
+currentNormal
+twistRadians
+```
+
+Per ogni passo:
+
+1. proiettare l'asse vista sulla tangente di `currentNormal`;
+2. calcolare il candidato di `0.01 m`;
+3. riproiettare localmente sulla parete;
+4. stabilizzare la normale candidata;
+5. verificare `angle(candidateNormal, attachmentNormal) <= 5 gradi`;
+6. verificare il percorso del Convex Hull e la posa finale;
+7. applicare la massima frazione valida o arrestare il passo.
+
+Il confronto con `attachmentNormal`, non con la sola normale del passo precedente, impedisce di attraversare gradualmente un cambio di inclinazione accumulando piccole variazioni. La normale corrente puo invece variare entro soglia per seguire una curva senza distacco.
+
+### 7.6 Rotazione e trasformazioni continue
+
+Le rotazioni sono quantizzate a `1 grado`. Ogni incremento viene verificato prima dell'applicazione. Per traslazioni e rotazioni devono essere controllate pose intermedie o query sweep equivalenti; la sola validita dell'endpoint non e sufficiente. Lo sgancio editoriale verifica invece separatamente ogni posa finale candidata. In caso di blocco si mantiene l'ultima posa valida.
+
+Il drag di rotazione calcola l'angolo firmato del pointer attorno al centro proiettato della hold usando `atan2`. Il delta viene normalizzato nell'intervallo `[-pi, +pi]`, accumulato e convertito in passi interi di 1 grado; il residuo inferiore a 1 grado resta accumulato fino ai movimenti successivi.
+
+### 7.7 Degeneri
+
+- normale non finita o quasi nulla: target non valido;
+- nessun hit: target nascosto/non valido;
+- parita di gruppi: tie-break definito in §7.2;
+- proiezione tangenziale degenere: fallback deterministico su asse vista alternativo;
+- nessuna posa valida nello sgancio: hold ancora attached e feedback utente;
+- il retro non e classificato: un tentativo intenzionale sul retro e fuori ambito, ma la geometria resta collidente.
 
 ## 8. Movimento e input
 
-- rotazione: +1/-1 grado per click + continuo a pressione;
-- traslazione: +1/-1 cm per click + continuo a pressione;
-- direzioni calcolate proiettando assi camera sul piano tangente;
-- shortcut tastiera obbligatorie ma mappatura lasciata open guidata.
+### 8.1 Componenti UI
+
+- `HoldContextMenu`: popup e stato abilitazione azioni;
+- `WallTargetOverlay`: cerchio, stato giallo/rosso e hint `Escape`;
+- `HoldMoveHandles`: quattro frecce e pressione continua;
+- `HoldRotationHandles`: frecce circolari e drag;
+- `HoldInteractionController`: macchina a stati e coordinamento pointer/OrbitControls.
+
+Gli overlay usano un contenitore con `pointer-events: none`; solo popup e handle interattivi usano `pointer-events: auto`.
+
+### 8.2 API scena
+
+La scena deve esporre azioni semantiche e risultati espliciti:
+
+```text
+getSelectedHoldState
+beginAttachTargeting
+updateAttachTarget
+commitAttachTarget
+detachSelected
+moveSelected
+rotateSelected
+cancelInteraction
+removeSelected
+onSelectedHoldStateChange
+```
+
+Esiti minimi:
+
+```text
+applied
+blocked
+invalid-target
+not-available
+```
+
+### 8.3 Pointer Events
+
+- usare esclusivamente Pointer Events per popup/gizmo;
+- drag con `setPointerCapture`;
+- cleanup su `pointerup`, `pointercancel`, `lostpointercapture`, blur, cambio selezione, rimozione, `Escape`;
+- in targeting il click sinistro non deve avviare OrbitControls;
+- tasto destro e rotella mantengono navigazione camera;
+- durante drag di un handle OrbitControls viene temporaneamente disabilitato.
+
+### 8.4 Posizionamento popup e gizmo
+
+Usare il bounding box world della hold proiettato nella camera per ottenere il rettangolo CSS. Aggiornare su camera change, resize, selezione e trasformazione. Se il bounding box e interamente dietro la camera o fuori viewport, nascondere popup e gizmo; se e parzialmente visibile, clamp del popup ai bordi della viewport.
+
+### 8.5 Scope input
+
+La UX 9UX e desktop mouse. Touch targeting e gesture gizmo non sono implementati. `Tab`, `Enter`, `Space` restano disponibili sui pulsanti del popup, ma non sugli handle che trasformano la hold; non esistono listener globali di trasformazione hold.
 
 ## 9. Export immagine
 

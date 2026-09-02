@@ -13,6 +13,10 @@
 5. Ogni fase deve produrre evidenze: file modificati, test eseguiti, risultati, check manuali ripetibili.
 6. Se emerge un punto OPEN, applicare solo le regole di `05-open-decisions-guidate.md` e documentare la scelta.
 
+### Congelamento baseline 0-9
+
+Le fasi 0-9 e i relativi report sono congelati e descrivono la baseline storica gia completata. Non devono essere riscritti retroattivamente. Dalla fase 9UX in avanti prevalgono i requisiti e il design aggiornati per l'interazione contestuale. In particolare non sono piu normativi snap automatico per prossimita, avanti/indietro, shortcut globali, pannello comandi fisso e `Rimuovi presa` nella topbar.
+
 ---
 
 ## Dipendenze tra fasi
@@ -43,8 +47,11 @@ FASE 0 (Setup)
                |
                v
          FASE 9 (Frontend: export immagine)
-               |
-               v
+                |
+                v
+         FASE 9UX (UX contestuale + targeting)
+                |
+                v
          FASE 10 (Test completo)
                |
                v
@@ -55,6 +62,7 @@ FASE 0 (Setup)
 ```
 
 Nota: FASE 1 e FASE 2 possono procedere in parallelo dopo FASE 0, ma entrambe devono essere complete prima delle fasi frontend che dipendono da API/collider.
+Nota: la FASE 9UX parte dalla baseline congelata della FASE 9 e deve essere completata prima della FASE 10.
 
 ---
 
@@ -429,13 +437,95 @@ Produrre JPG guida conforme alle specifiche.
 
 ---
 
+## FASE 9UX - Interazione contestuale e posizionamento diretto
+
+### Obiettivo
+Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indietro e snap automatico con popup contestuale, targeting diretto, gizmo mouse e blocco al cambio di superficie.
+
+### Requisiti SDD coperti
+- `REQ-SCN-002`, `REQ-SCN-003`, `REQ-SCN-005`
+- `REQ-FIS-002`, `REQ-FIS-006..015`
+- `REQ-UI-002..004`
+- `REQ-UX-001..010`
+- `REQ-IMG-002`
+- `REQ-TST-010`
+- Principi `C16..C21`
+
+### Vincoli e specifiche da garantire
+- popup con tutte le azioni e abilitazione per stato;
+- modalita `idle`, `attach-targeting`, `moving`, `rotating` mutuamente esclusive;
+- aggancio diretto senza validazione del percorso detached-target;
+- target giallo/rosso DOM/SVG e campionamento dominante a 37 punti;
+- nessuna copertura minima richiesta per il cerchio;
+- posa finale di aggancio verificata con Convex Hull;
+- sgancio da 0.50 m con incremento 0.10 m fino a 10 m;
+- rotazione mouse quantizzata a 1 grado;
+- movimento mouse di 1 cm con pressione continua;
+- confronto della normale corrente con la normale di aggancio, tolleranza 5 gradi;
+- blocco su cambio di superficie, diedro, spigolo o prominenza oltre soglia;
+- parete interamente collidente, retro non classificato;
+- nessuna shortcut globale di trasformazione;
+- overlay esclusi dall'export;
+- supporto richiesto solo per mouse desktop.
+
+### Task implementativi
+1. Rifattorizzare `WallSceneController` con stato presentazionale e risultati azione espliciti.
+2. Estrarre `HoldInteractionController` e macchina a stati.
+3. Implementare `HoldContextMenu` con ancoraggio al bounding box proiettato.
+4. Implementare `WallTargetOverlay` e aggiornamento una volta per frame.
+5. Implementare campionamento a 37 punti, clustering e tie-break superficie dominante.
+6. Implementare commit diretto e validazione posa finale.
+7. Implementare sgancio progressivo senza fallback allo spawn.
+8. Implementare `HoldRotationHandles` con pointer capture e quantizzazione.
+9. Implementare `HoldMoveHandles` con pressione continua e surface lock a 5 gradi.
+10. Rimuovere pannello fisso, `Rimuovi` dalla topbar, listener e hint delle shortcut legacy.
+11. Coordinare OrbitControls con targeting e drag.
+12. Escludere popup, target, hint e gizmo dall'export.
+13. Aggiornare feedback utente e cleanup di timer/pointer/modalita.
+14. Riscrivere unit test ed E2E legacy interessati.
+
+### Test da eseguire
+- popup visibile e ancorato dopo selezione;
+- azioni abilitate correttamente in detached/attached;
+- popup aggiornato dopo orbit, resize e movimento;
+- target segue il mouse e usa limiti 48-160 px;
+- campionamento dominante su pannello, curva, bordo, centro in foro e parita;
+- target invalido rosso, hold invariata, targeting ancora attivo;
+- `Escape` annulla targeting/move/rotate e mantiene selezione;
+- aggancio diretto su superficie frontale, inclinata e laterale;
+- collisione finale parete/hold rifiutata;
+- sgancio a 0.50 m, fallback progressivo 0.10 m e fallimento a 10 m;
+- click/drag rotazione a 1 grado e blocco collisione;
+- click/hold movimento a 1 cm e stop su release/cancel;
+- superficie curva entro 5 gradi seguita senza distacco;
+- cambio oltre 5 gradi bloccato senza transizione;
+- nessuna vecchia shortcut modifica la hold;
+- tasto destro/rotella disponibili in targeting, click sinistro riservato;
+- drag gizmo non muove la camera;
+- rimozione dal popup aggiorna catalogo;
+- overlay assenti dal JPG e stato interattivo ripristinato;
+- regressione completa catalogo, selezione, export e mobile smoke.
+
+### Definition of Done
+- UX legacy non piu raggiungibile;
+- tutte le azioni contestuali operative con risultati non ambigui;
+- parete impenetrabile nei flussi continui coperti;
+- aggancio diretto valido su tutta la geometria visibile targetizzabile;
+- nessuna transizione automatica fra inclinazioni oltre soglia;
+- timer, pointer capture e modalita sempre rilasciati;
+- suite frontend e backend completa verde;
+- report `phases-outcome/Phase_9UX_implementation_done.md` con evidenze e limiti.
+
+---
+
 ## FASE 10 - Test completo e quality gates
 
 ### Obiettivo
 Chiudere copertura automatica completa e verifiche di regressione.
 
 ### Requisiti SDD coperti
-- `REQ-TST-001..009`
+- `REQ-TST-001..007`
+- `REQ-TST-009..010`
 - collegamenti da `04-tracciabilita.md` su tutti i domini.
 
 ### Vincoli e specifiche da garantire
@@ -451,8 +541,9 @@ Chiudere copertura automatica completa e verifiche di regressione.
 
 ### Test da eseguire
 - esecuzione completa suite locale e CI;
-- regressione collisioni e snap;
-- regressione ciclo pre-snap/post-snap con avanti/indietro, no-op avanti post-snap e sgancio su indietro.
+- regressione collisioni, targeting e aggancio diretto;
+- regressione ciclo detached/attached e modalita contestuali della FASE 9UX;
+- verifica che i comportamenti legacy congelati non siano piu raggiungibili.
 
 ### Definition of Done
 - suite completa verde;
@@ -521,7 +612,7 @@ Completare documentazione tecnica e operativa conforme ai requisiti.
 
 Prima di considerare chiuso il lavoro:
 - controllare copertura completa della matrice `sdd-specs/04-tracciabilita.md`;
-- verificare assenza violazioni costituzionali (`C1..C15`);
+- verificare assenza violazioni costituzionali (`C1..C21`);
 - confermare nessuna funzionalita extra non richiesta (autenticazione/persistenza);
 - confermare conformita naming hold `Hold<number>` in codice, test, docs;
 - confermare pipeline CI completamente verde.

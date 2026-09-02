@@ -3,7 +3,11 @@
 
 Ogni requisito usa ID `REQ-<DOMINIO>-<NUMERO>` e include criteri di accettazione verificabili.
 
-Domini: ARC, MOD, CAT, SCN, FIS, HUL, UI, IMG, PRF, ERR, LOG, TST, DOC, DEP.
+Domini: ARC, MOD, CAT, SCN, FIS, HUL, UI, UX, IMG, PRF, ERR, LOG, TST, DOC, DEP.
+
+## Baseline e prevalenza 9UX
+
+Le fasi 0-9 e i relativi report restano congelati come baseline storica. Dalla fase 9UX in avanti i requisiti aggiornati in questo documento sostituiscono le precedenti regole di interazione basate su snap automatico, comandi avanti/indietro, pannello comandi fisso e shortcut globali. Non e richiesto retrofittare i report delle fasi congelate.
 
 ## ARC - Architettura
 
@@ -86,7 +90,7 @@ GLB obbligatorio; texture/asset opzionali.
 - Criteri: istanza mantiene stato scena; modello resta risorsa catalogo.
 
 **REQ-SCN-002 - Selezione via click.**
-- Criteri: hold selezionata evidenziata; comandi agiscono solo su selezionata.
+- Criteri: hold selezionata evidenziata; compare popup contestuale ancorato alla hold; azioni e overlay agiscono solo sulla selezionata.
 
 **REQ-SCN-003 - Rimozione hold selezionata.**
 - Criteri: rimozione elimina istanza e collider associato.
@@ -94,8 +98,8 @@ GLB obbligatorio; texture/asset opzionali.
 **REQ-SCN-004 - Parete auto-load.**
 - Criteri: parete visibile all'avvio senza input utente.
 
-**REQ-SCN-005 - Posizionamento iniziale hold in stato pre-snap.**
-- All'aggiunta in scena, la hold deve essere posta in stato `pre-snap`.
+**REQ-SCN-005 - Posizionamento iniziale hold in stato detached.**
+- All'aggiunta in scena, la hold deve essere posta in stato `detached`.
 - Il sistema deve individuare il punto di riferimento frontale della parete lungo la direzione globale `+Z`, in corrispondenza del centro geometrico proiettato sul fronte.
 - Il primo punto candidato deve essere posto a `2.0 m` dal punto frontale, verso l'esterno lungo `+Z`.
 - Se il punto candidato e occupato o genera compenetrazione, il sistema deve cercare una posizione libera mediante una griglia deterministica sul piano parallelo al fronte della parete.
@@ -105,7 +109,7 @@ GLB obbligatorio; texture/asset opzionali.
 - La ricerca su griglia deve essere limitata all'area frontale proiettata della parete (bounding frontale) estesa da un margine configurabile.
 - Ogni posizione candidata deve essere validata tramite Rapier rispetto alla parete e alle hold gia presenti.
 - L'inserimento deve essere annullato soltanto se nessuna posizione valida e disponibile dopo esaurimento deterministico di tutti i candidati nel dominio di ricerca.
-- Criteri: la hold compare in una posizione pre-snap libera, non compenetra, non viene agganciata automaticamente e piu hold possono essere aggiunte contemporaneamente.
+- Criteri: la hold compare in una posizione detached libera, non compenetra, non viene agganciata automaticamente e piu hold possono essere aggiunte contemporaneamente.
 
 ## FIS - Fisica, snap, movimento
 
@@ -113,7 +117,7 @@ GLB obbligatorio; texture/asset opzionali.
 - Criteri: 1 unita = 1 metro, sistema destrorso coerente three.js.
 
 **REQ-FIS-002 - Regole fisiche base.**
-Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
+Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no attrito.
 - Criteri: hold non si muovono autonomamente.
 
 **REQ-FIS-003 - CCD.**
@@ -125,37 +129,56 @@ Gravita off, no dinamica, no inerzia, no rimbalzo, no attrito.
 **REQ-FIS-005 - Origine hold.**
 - Criteri: rotazione attorno al punto di contatto posteriore.
 
-**REQ-FIS-006 - Snap 5 cm.**
-- Criteri: snap solo se distanza <= 0.05 m; no snap oltre soglia.
+**REQ-FIS-006 - Aggancio diretto al target.**
+- L'aggancio e avviato esclusivamente dall'azione contestuale `Aggancia` e dal click su un target della parete.
+- Il percorso fra posa detached e target non viene simulato ne validato.
+- La posa finale allinea l'asse locale `+Z` della hold alla normale stabilizzata della superficie dominante e conserva il twist corrente.
+- Criteri: nessuno snap automatico per prossimita; target valido produce stato `attached`; target invalido lascia invariata la hold e mantiene attiva la modalita di targeting.
 
-**REQ-FIS-007 - Movimento post-snap e sgancio controllato.**
-- Criteri: in stato post-snap la hold resta aderente alla parete e i movimenti standard restano tangenziali; il comando avanti non produce effetti; il comando indietro provoca lo sgancio, ripristina l'orientamento iniziale completo dell'istanza (quello al caricamento in scena) e riposiziona automaticamente la hold a distanza `0.25 m` dalla parete lungo la normale locale (`0.05 m` soglia snap + `0.20 m` margine).
+**REQ-FIS-007 - Sgancio progressivo controllato.**
+- `Sgancia` e disponibile soltanto in stato attached.
+- Il sistema ripristina l'orientamento detached iniziale e verifica pose lungo la normale uscente, iniziando a `0.50 m` dal punto di aggancio e aumentando la distanza di `0.10 m` per tentativo.
+- La ricerca termina alla prima posa valida oppure a una distanza massima configurata di `10 m`.
+- Criteri: primo candidato valido selezionato deterministicamente; nessun fallback allo spawn iniziale; se nessun candidato e valido la hold resta attached e viene mostrato un messaggio non tecnico.
 
 **REQ-FIS-008 - Inclinazione non manuale.**
 - Criteri: nessun controllo UI modifica tilt indipendente dalla normale.
 
 **REQ-FIS-009 - Rotazione input.**
-- Criteri: 1 grado/click + continuo a pressione; shortcut equivalenti.
+- La rotazione e disponibile soltanto in modalita `rotating` per una hold attached.
+- Click sulle frecce circolari: `1 grado`; drag: rotazione continua quantizzata a `1 grado`.
+- La rotazione avviene attorno alla normale di aggancio e si arresta all'ultimo angolo non compenetrante.
+- Criteri: twist conservato; pointer capture; nessuna reazione OrbitControls durante il drag; nessuna shortcut globale.
 
 **REQ-FIS-010 - Traslazione input.**
-- Criteri: 1 cm/click + continuo a pressione; direzioni da proiezione assi vista su piano tangente.
+- La traslazione e disponibile soltanto in modalita `moving` per una hold attached.
+- Quattro frecce contestuali muovono alto/basso/destra/sinistra rispetto alla vista corrente.
+- Ogni click applica `0.01 m`; la pressione prolungata ripete il comando.
+- Le direzioni derivano dalla proiezione degli assi vista sul piano tangente locale.
+- Criteri: nessun comando avanti/indietro; pointer release/cancel arresta la ripetizione; nessuna shortcut globale.
 
 **REQ-FIS-011 - No compenetrazione.**
-- Criteri: hold non attraversa parete ne altra hold.
+- Tutto il TriMesh, incluso il retro non classificato, e impenetrabile durante spostamento, rotazione e sgancio.
+- Aggancio e sgancio diretto validano la posa finale candidata ma non simulano il percorso editoriale verso la destinazione.
+- Il contatto a distanza zero e valido; la tolleranza numerica massima di penetrazione accettata e `0.001 m`.
+- Criteri: Convex Hull non penetra parete o altre hold oltre `0.001 m` nelle pose committate; spostamento e rotazione si arrestano all'ultima posa valida.
 
 **REQ-FIS-012 - Separazione mesh/collider.**
 - Criteri: fisica usa solo collider Rapier.
 
 **REQ-FIS-013 - Parete TriMesh statica client-side.**
-- Criteri: collider parete derivato da vertici/triangoli parete lato client.
+- Tutti i triangoli del modello partecipano al collider e sono candidabili per l'aggancio, indipendentemente da normale, inclinazione, prominenza, curvatura o cavita.
+- Il retro non viene classificato o filtrato per il targeting; un uso intenzionale del retro e fuori ambito ma resta fisicamente collidente.
+- Criteri: collider derivato da tutti i vertici/triangoli parete lato client; nessun filtro basato su `+Z` durante targeting e collisioni.
 
-**REQ-FIS-014 - Pre-snap e degeneri (deterministici).**
-- Criteri: fallback normale (triangolo -> ultima valida -> asse mondo), tie-break stabile su contatti equivalenti, annullamento inserimento se nessuna posizione valida non compenetrante.
+**REQ-FIS-014 - Target e degeneri deterministici.**
+- Criteri: normali finite; raggruppamento e tie-break deterministici; target privo di hit non agganciabile; posa invalida non modifica la hold.
 
-**REQ-FIS-015 - Traslazione avanti/indietro lungo normale locale (pre-snap).**
-- In stato pre-snap devono essere disponibili i comandi avanti/indietro lungo la normale locale della parete.
-- Velocita: `1 cm/click` + movimento continuo a pressione.
-- Criteri: durante avanti/indietro devono essere rispettate tutte le regole anti-collisione e anti-compenetrazione; una hold non attraversa parete ne altre hold.
+**REQ-FIS-015 - Vincolo alla superficie di aggancio.**
+- Al momento dell'aggancio viene memorizzata la normale stabilizzata di aggancio.
+- Durante `Sposta` la hold puo seguire piccole variazioni locali pur restando aderente, ma la normale candidata deve rimanere entro `5 gradi` dalla normale di aggancio.
+- Un diedro, spigolo, prominenza o cambio di inclinazione oltre soglia arresta il movimento all'ultima posa valida.
+- Criteri: nessuna transizione automatica fra superfici; per cambiare superficie sono necessari `Sgancia` e un nuovo `Aggancia`.
 
 ## HUL - Convex Hull backend
 
@@ -190,13 +213,85 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: catalogo sinistra, viewport nel resto dello spazio.
 
 **REQ-UI-002 - Menu superiore.**
-- Criteri: bottoni `Genera immagine` e `Rimuovi presa` disponibili.
+- Criteri: bottone `Genera immagine` disponibile; `Rimuovi` e presente esclusivamente nel popup contestuale.
 
 **REQ-UI-003 - OrbitControls.**
 - Criteri: orbit/zoom/pan con target parete.
 
-**REQ-UI-004 - Shortcut tastiera open guidato.**
-- Criteri: mappatura documentata, coerente e non conflittuale quando possibile; includere `SHIFT+Freccia Su` per avanti e `SHIFT+Freccia Giu` per indietro.
+**REQ-UI-004 - Tastiera e accessibilita.**
+- Non esistono shortcut globali per spostamento o rotazione hold.
+- `Escape` annulla `attach-targeting` e termina `moving`/`rotating`.
+- I pulsanti del popup restano utilizzabili tramite focus, `Enter` e `Space`; gli handle che producono movimento o rotazione sono mouse-only.
+- Le azioni semantiche del popup, incluso `Sgancia`, possono produrre cambi di stato o riposizionamenti diretti quando attivate da tastiera; il divieto riguarda gli input incrementali di movimento e rotazione.
+- Criteri: pressione delle vecchie shortcut non modifica le hold; hint `Escape` visibile nelle modalita attive.
+
+## UX - Interazione contestuale fase 9UX
+
+**REQ-UX-001 - Popup contestuale.**
+- Alla selezione di una hold compare un popup DOM vicino al bounding box proiettato della hold.
+- Il popup mostra sempre `Aggancia`, `Sgancia`, `Ruota`, `Sposta`, `Rimuovi`.
+- Stato detached: `Aggancia` e `Rimuovi` abilitati.
+- Stato attached: `Sgancia`, `Ruota`, `Sposta`, `Rimuovi` abilitati.
+- Criteri: popup aggiornato durante camera, resize e trasformazioni; mantenuto nella viewport; nascosto in `attach-targeting` e durante export.
+
+**REQ-UX-002 - Macchina a stati interazione.**
+- Stati fisici hold: `detached`, `attached`.
+- Modalita UI: `idle`, `attach-targeting`, `moving`, `rotating`.
+- Le modalita sono mutuamente esclusive; cambio selezione, rimozione, blur, `Escape` e pointer cancel interrompono le interazioni attive secondo il design.
+- Criteri: una sola modalita attiva; nessun timer o pointer capture resta attivo dopo l'uscita.
+
+**REQ-UX-003 - Cerchio target.**
+- Il target e un overlay DOM/SVG circolare pieno e trasparente, giallo in stato ordinario e rosso dopo un tentativo invalido.
+- Il diametro deriva dal bounding box proiettato della base della hold ed e limitato fra `48 px` e `160 px`.
+- Durante `pointermove` viene aggiornato al massimo una volta per frame usando il ray centrale.
+- Dopo un click invalido resta rosso per `500 ms` o fino al successivo movimento, poi torna giallo.
+- Criteri: parete visibile sotto il target; target assente fuori dalla parete; overlay escluso dall'export.
+
+**REQ-UX-004 - Campionamento superficie dominante.**
+- Al click il cerchio usa `37` campioni deterministici: centro e tre anelli rispettivamente da `6`, `12`, `18` punti.
+- Ogni campione ha peso unitario ed esegue un raycast camera verso il primo triangolo visibile della parete.
+- Gli hit di campioni adiacenti nel pattern vengono raggruppati se la distanza world e inferiore o uguale al diametro fisico della base e la differenza delle normali e entro `5 gradi`; la chiusura transitiva definisce il gruppo.
+- Non esiste copertura minima: vince il gruppo con maggior peso fra i soli campioni validi.
+- Per ogni gruppo la distanza camera e il minimo delle distanze dei membri e l'ID stabile e il minimo ID dei membri.
+- Parita: gruppo contenente il campione centrale, poi distanza camera del gruppo minore, poi ID stabile del gruppo minore.
+- Se il centro cade in un foro ma altri campioni colpiscono la parete, il gruppo dominante resta candidabile.
+- Criteri: risultato deterministico; nessun hit produce target non valido; superficie dominante verificata su bordo e curva.
+
+**REQ-UX-005 - Commit aggancio.**
+- Il click in `attach-targeting` costruisce una posa sul gruppo dominante.
+- Il punto candidato e il campione del gruppo dominante piu vicino al centro del cerchio; a pari distanza vince l'indice campione minore. La normale e stabilizzata usando i campioni del gruppo.
+- La posa valida viene applicata direttamente e il popup ricompare nello stato attached.
+- La posa invalida non sposta la hold, colora il target di rosso e mantiene il targeting.
+- `Escape` annulla senza modifiche.
+- Criteri: nessuna validazione del percorso detached-target; posa finale validata contro parete e altre hold.
+
+**REQ-UX-006 - Gizmo rotazione.**
+- Due frecce circolari DOM/SVG attorno alla hold selezionata.
+- Click = `1 grado`; drag = passi quantizzati di `1 grado`.
+- La modalita resta attiva fino a `Escape`; click esterno non la chiude.
+- Durante il drag OrbitControls e disabilitato per il pointer catturato.
+- Criteri: rotazione bloccata all'ultimo angolo valido; cleanup su pointerup, pointercancel e lostpointercapture.
+
+**REQ-UX-007 - Gizmo movimento.**
+- Quattro frecce DOM/SVG ai bordi della hold proiettata.
+- Click = `1 cm`; pressione prolungata = ripetizione con parametri correnti `300 ms` di ritardo e `60 ms` di intervallo.
+- La modalita resta attiva fino a `Escape`; click esterno non la chiude.
+- Criteri: direzioni coerenti con lo schermo; rilascio/cancel arresta immediatamente; cambio superficie oltre 5 gradi blocca.
+
+**REQ-UX-008 - Interazione camera durante targeting.**
+- In `attach-targeting` il click sinistro e riservato al target.
+- Rotazione/pan tramite tasto destro e zoom tramite rotella restano disponibili.
+- Durante drag di gizmo la camera non reagisce allo stesso pointer.
+- Criteri: target e popup si riallineano dopo camera/resize; nessun doppio comando camera+hold.
+
+**REQ-UX-009 - Piattaforma di input.**
+- La fase 9UX e progettata per mouse desktop.
+- Touch, gesture mobile e trasformazioni hold via tastiera non sono requisiti di questa fase; la viewport deve comunque continuare a caricarsi su schermi piccoli.
+- Criteri: flussi E2E eseguiti con mouse desktop Chromium; nessuna promessa di parita touch.
+
+**REQ-UX-010 - Risultati e feedback.**
+- Le azioni scena restituiscono esiti distinguibili: `applied`, `blocked`, `invalid-target`, `not-available`, con motivo non tecnico.
+- Criteri: nessun messaggio `comando applicato` quando la trasformazione non avviene; errore locale non chiude il popup o la modalita salvo necessita.
 
 ## IMG - Generazione immagine
 
@@ -204,7 +299,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: l'export mantiene esattamente posizione, orientamento, zoom, proiezione prospettica e rapporto d'aspetto della camera interattiva corrente.
 
 **REQ-IMG-002 - Output della sola scena.**
-- Criteri: l'immagine contiene esclusivamente il rendering 3D visibile nella viewport, senza catalogo, menu o controlli UI; lo sfondo corrisponde a quello corrente della scena.
+- Criteri: l'immagine contiene esclusivamente il rendering 3D visibile nella viewport, senza catalogo, menu, popup, target, hint o gizmo; lo sfondo corrisponde a quello corrente della scena.
 
 **REQ-IMG-003 - Formato.**
 - Criteri: file JPG valido ad alta risoluzione.
@@ -293,10 +388,14 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 **REQ-TST-007 - Determinismo test fisici.**
 
 **REQ-TST-008 - Test snap e degeneri completi.**
-- Criteri: no snap oltre 5 cm, snap entro 5 cm, normale del punto di contatto corretta, rotazione post-snap attorno alla normale, movimento tangenziale post-snap, fallback normale deterministico, tie-break deterministico.
+- Stato: requisito storico della fase 8 congelata. I relativi test documentano la baseline precedente e devono essere sostituiti o rimossi dalla fase 9UX quando verificano comportamenti legacy non piu normativi.
+- Criteri storici: no snap oltre 5 cm, snap entro 5 cm, normale del punto di contatto corretta, rotazione post-snap attorno alla normale, movimento tangenziale post-snap, fallback normale deterministico, tie-break deterministico.
 
 **REQ-TST-009 - Verifica lockfile CI.**
 - Criteri: CI usa lockfile, fallisce con drift dipendenze.
+
+**REQ-TST-010 - Test interazione contestuale 9UX.**
+- Criteri: copertura automatica popup, stati, targeting, superficie dominante, target invalido, aggancio diretto, sgancio progressivo, rotazione drag, movimento hold-to-repeat, blocco a 5 gradi, cleanup pointer/timer, assenza shortcut legacy, coordinamento OrbitControls, rimozione contestuale ed esclusione overlay dall'export.
 
 ## DOC - Documentazione
 
@@ -304,7 +403,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: tutte le classi e tutti i metodi backend/frontend documentati in italiano.
 
 **REQ-DOC-002 - Documento applicativo completo.**
-- Criteri: descrive logica completa, struttura software, avvio live/debug.
+- Criteri: descrive logica completa, struttura software, avvio live/debug e separa esplicitamente baseline storica 0-9 dalla UX attiva dalla fase 9UX.
 
 **REQ-DOC-003 - Diagrammi obbligatori.**
 - Criteri: presenti 6 diagrammi richiesti (architettura, cartelle, API, lifecycle hold, flusso UI, responsabilita backend/frontend).
