@@ -108,6 +108,34 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('blocca il movimento pre-snap contro un pannello laterale della parete', async () => {
+    const physics = await PhysicsWorld.create(createSidePlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0.5, 0, 0),
+      new Quaternion(),
+    );
+
+    const movement = physics.movePreSnapWithCollisions(moving, { x: -1, y: 0, z: 0 });
+
+    expect(movement.x).toBeGreaterThan(-0.5);
+    expect(moving.body.translation().x).toBeGreaterThanOrEqual(0.1);
+    physics.dispose();
+  });
+
+  it('proietta il pivot sul punto più vicino di un pannello laterale', async () => {
+    const physics = await PhysicsWorld.create(createSidePlaneTriMesh());
+
+    const projection = physics.projectPointToWall({ x: 0.04, y: 0.5, z: -0.25 });
+
+    expect(projection).not.toBeNull();
+    expect(projection?.distance).toBeCloseTo(0.04, 5);
+    expect(projection?.point.x).toBeCloseTo(0, 5);
+    expect(projection?.point.y).toBeCloseTo(0.5, 5);
+    expect(projection?.point.z).toBeCloseTo(-0.25, 5);
+    physics.dispose();
+  });
+
   it('restituisce punto e normale del contatto parete', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
 
@@ -225,6 +253,19 @@ function createPlaneTriMesh() {
       2, -2, 0,
       2, 2, 0,
       -2, 2, 0,
+    ]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+}
+
+/** Crea un pannello sul piano X=0 per rilevare assunzioni improprie sull'asse globale Z. */
+function createSidePlaneTriMesh() {
+  return {
+    vertices: new Float32Array([
+      0, -2, -2,
+      0, 2, -2,
+      0, 2, 2,
+      0, -2, 2,
     ]),
     indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
   };

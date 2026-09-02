@@ -30,7 +30,12 @@ import {
 } from '../input/holdCommands';
 import { PhysicsWorld } from '../physics/physicsWorld';
 import type { KinematicPhysicsObject } from '../physics/physicsWorld';
-import { limitMovementToFrontSurface } from '../physics/normalMovement';
+import {
+  findMaximumValidFraction,
+  walkSurface,
+  type SurfaceSupport,
+} from '../physics/surfaceMovement';
+import { GEOMETRY_CONFIG } from '../physics/geometryConfig';
 import {
   addTwistAroundNormal,
   DETACH_DISTANCE_METERS,
@@ -47,6 +52,7 @@ import {
   SPAWN_GRID_MARGIN_METERS,
   SPAWN_GRID_STEP_METERS,
 } from './spawnCandidates';
+import { buildWallTopology } from './wallTopology';
 
 /** Riferimenti della scena esposti esclusivamente per diagnostica e test E2E. */
 export interface WallSceneDebug {
@@ -80,6 +86,10 @@ export interface WallSceneDebug {
     readonly spawnOffset: readonly number[];
     readonly spawnCandidateIndex: number;
     readonly contactPoint: readonly number[] | null;
+    readonly supportFeatureId: number | null;
+    readonly lastSurfaceStopReason: string | null;
+    readonly surfaceTransitions: number;
+    readonly twistRadians: number;
   }>>;
   readonly wallFrontReference: readonly number[];
   readonly lastExportCamera: CameraSnapshot | null;
@@ -121,6 +131,18 @@ interface HoldSceneInstance {
   contactPoint: Vector3 | null;
   lastValidNormal: Vector3 | null;
   twistRadians: number;
+  readonly surfaceAcquisitionDistance: number;
+  readonly collisionRadius: number;
+  supportFeatureId: number | null;
+  lastSurfaceStopReason: string | null;
+  surfaceTransitions: number;
+}
+
+interface WallSurfaceContact {
+  readonly point: Vector3;
+  readonly normal: Vector3;
+  readonly distance: number;
+  readonly featureId: number;
 }
 
 declare global {
@@ -162,6 +184,7 @@ export async function createWallScene(
   const wall = await loadWall();
   scene.add(wall.object);
   const frontReference = findFrontReference(wall.object, wall.center, wall.bounds);
+  const wallTopology = buildWallTopology(wall.triMesh);
   status.textContent = 'Inizializzazione fisica...';
   const physics = await PhysicsWorld.create(wall.triMesh);
   const holdInstances = new Map<string, HoldSceneInstance>();
@@ -221,6 +244,10 @@ export async function createWallScene(
           spawnOffset: instance.spawnOffset.toArray(),
           spawnCandidateIndex: instance.spawnCandidateIndex,
           contactPoint: instance.contactPoint?.toArray() ?? null,
+          supportFeatureId: instance.supportFeatureId,
+          lastSurfaceStopReason: instance.lastSurfaceStopReason,
+          surfaceTransitions: instance.surfaceTransitions,
+          twistRadians: instance.twistRadians,
         }]),
       ),
       wallFrontReference: frontReference.toArray(),
@@ -299,7 +326,15 @@ export async function createWallScene(
         selected.localNormal,
         command === 'rotate-clockwise' ? -ROTATION_STEP_RADIANS : ROTATION_STEP_RADIANS,
       );
-      if (physics.canPlaceWithoutHoldOverlap(selected.physics, selected.physics.body.translation(), next)) {
+      const position = selected.physics.body.translation();
+      const currentRotation = new Quaternion(current.x, current.y, current.z, current.w);
+      if (isTransformPathValid(
+        selected,
+        new Vector3(position.x, position.y, position.z),
+        currentRotation,
+        new Vector3(position.x, position.y, position.z),
+        next,
+      )) {
         physics.setKinematicTransform(selected.physics, selected.physics.body.translation(), next);
         selected.twistRadians += command === 'rotate-clockwise' ? -ROTATION_STEP_RADIANS : ROTATION_STEP_RADIANS;
       }
@@ -324,12 +359,14 @@ export async function createWallScene(
       if (selected.attachment === 'post-snap') movePostSnapTangential(selected, direction);
       else {
         const current = selected.physics.body.translation();
-        const movement = physics.movePreSnapWithCollisions(selected.physics, direction);
+        const includeWall = isWallWithinMovementRange(selected, current, direction);
+        const movement = physics.movePreSnapWithCollisions(selected.physics, direction, includeWall);
         physics.setKinematicTransform(selected.physics, {
           x: current.x + movement.x,
           y: current.y + movement.y,
           z: current.z + movement.z,
         }, selected.physics.body.rotation());
+        updatePreSnapSurface(selected);
       }
     }
     physics.synchronizeRendering();
@@ -341,75 +378,183 @@ export async function createWallScene(
   function movePreSnapNormal(instance: HoldSceneInstance, sign: -1 | 1): void {
     const currentRaw = instance.physics.body.translation();
     const current = new Vector3(currentRaw.x, currentRaw.y, currentRaw.z);
+    const surface = findClosestWallSurface(current, instance.lastValidNormal);
+    if (surface) updatePreSnapNormal(instance, surface);
     if (sign > 0) {
       const movement = instance.localNormal.clone().multiplyScalar(TRANSLATION_STEP_METERS);
-      physics.movePreSnapWithCollisions(instance.physics, movement);
-      return;
-    }
-
-    const estimatedDistance = current.clone().sub(frontReference).dot(instance.localNormal);
-    if (estimatedDistance > 0.15) {
       physics.movePreSnapWithCollisions(
         instance.physics,
-        instance.localNormal.clone().multiplyScalar(-TRANSLATION_STEP_METERS),
+        movement,
+        isWallWithinMovementRange(instance, currentRaw, movement),
       );
+      updatePreSnapSurface(instance);
       return;
     }
 
-    const contact = findWallContact(current, instance.localNormal, 0.5);
-    if (contact && isWithinSnapDistance(contact.distance)) {
-      snapHold(instance, contact.point, contact.normal);
+    if (surface && isWithinSnapDistance(surface.distance)) {
+      snapHold(instance, surface);
       return;
     }
-    if (contact && isWithinSnapDistance(Math.max(0, contact.distance - TRANSLATION_STEP_METERS))) {
-      snapHold(instance, contact.point, contact.normal);
+    if (surface && isWithinSnapDistance(Math.max(0, surface.distance - TRANSLATION_STEP_METERS))) {
+      snapHold(instance, surface);
       return;
     }
-
-    const wallLimitedDistance = contact
-      ? Math.max(-TRANSLATION_STEP_METERS, -(contact.distance - 0.001))
-      : limitMovementToFrontSurface(current, frontReference, instance.localNormal, -TRANSLATION_STEP_METERS);
-    physics.movePreSnapWithCollisions(
+    const desired = instance.localNormal.clone().multiplyScalar(-TRANSLATION_STEP_METERS);
+    const movement = physics.movePreSnapWithCollisions(
       instance.physics,
-      instance.localNormal.clone().multiplyScalar(wallLimitedDistance),
+      desired,
+      isWallWithinMovementRange(instance, currentRaw, desired),
     );
+    if (movement.x === 0 && movement.y === 0 && movement.z === 0) return;
+    updatePreSnapSurface(instance, true);
   }
 
   /** Aggancia pivot e orientamento alla normale del contatto, se la trasformazione è valida. */
-  function snapHold(instance: HoldSceneInstance, point: Vector3, candidateNormal: Vector3): void {
-    const normal = resolveContactNormal(candidateNormal, instance.lastValidNormal, new Vector3(0, 0, 1));
-    if (normal.dot(new Vector3().subVectors(instance.physics.body.translation() as Vector3, point)) < 0) normal.negate();
+  function snapHold(instance: HoldSceneInstance, surface: WallSurfaceContact): void {
+    if (!Number.isInteger(surface.featureId) || surface.featureId < 0 || surface.featureId >= wallTopology.triangleCount) return;
+    const normal = resolveContactNormal(surface.normal, instance.lastValidNormal, new Vector3(0, 0, 1));
+    if (normal.dot(new Vector3().subVectors(instance.physics.body.translation() as Vector3, surface.point)) < 0) normal.negate();
     const rotation = orientationFromNormal(normal, instance.twistRadians);
-    if (!physics.canPlaceWithoutHoldOverlap(instance.physics, point, rotation)) return;
-    physics.setKinematicTransform(instance.physics, point, rotation);
+    const current = instance.physics.body.translation();
+    const currentRotation = instance.physics.body.rotation();
+    if (!isTransformPathValid(
+      instance,
+      new Vector3(current.x, current.y, current.z),
+      new Quaternion(currentRotation.x, currentRotation.y, currentRotation.z, currentRotation.w),
+      surface.point,
+      rotation,
+    )) return;
+    physics.setKinematicTransform(instance.physics, surface.point, rotation);
     instance.attachment = 'post-snap';
     instance.localNormal = normal;
     instance.lastValidNormal = normal.clone();
-    instance.contactPoint = point.clone();
+    instance.contactPoint = surface.point.clone();
+    instance.supportFeatureId = surface.featureId;
+    instance.lastSurfaceStopReason = null;
   }
 
-  /** Muove sul tangente, evita altre hold e riproietta il pivot sulla parete. */
+  /** Segue esclusivamente facce contigue e arresta il residuo alla prima posa non valida. */
   function movePostSnapTangential(instance: HoldSceneInstance, desired: Vector3): void {
     const beforeRaw = instance.physics.body.translation();
     const before = new Vector3(beforeRaw.x, beforeRaw.y, beforeRaw.z);
-    const movement = physics.moveTangentialWithCollisions(instance.physics, desired);
-    const candidate = before.add(new Vector3(movement.x, movement.y, movement.z));
-    const contact = findWallContact(candidate.clone().addScaledVector(instance.localNormal, 0.1), instance.localNormal, 0.25);
-    if (!contact) {
-      physics.setKinematicTransform(instance.physics, beforeRaw, instance.physics.body.rotation());
-      return;
+    if (instance.supportFeatureId === null) return;
+    const path = walkSurface(wallTopology, {
+      triangleId: instance.supportFeatureId,
+      point: instance.contactPoint?.clone() ?? before,
+      normal: instance.localNormal.clone(),
+    }, desired);
+
+    let applied: SurfaceSupport = {
+      triangleId: instance.supportFeatureId,
+      point: before,
+      normal: instance.localNormal.clone(),
+    };
+    let currentRotation = new Quaternion(
+      instance.physics.body.rotation().x,
+      instance.physics.body.rotation().y,
+      instance.physics.body.rotation().z,
+      instance.physics.body.rotation().w,
+    );
+    let appliedTransitions = 0;
+    let blockedByCollision = false;
+    for (let waypointIndex = 0; waypointIndex < path.waypoints.length; waypointIndex += 1) {
+      const waypoint = path.waypoints[waypointIndex];
+      const targetRotation = orientationFromNormal(waypoint.normal, instance.twistRadians);
+      if (waypoint.kind === 'normal-change') {
+        const rotationFraction = maximumValidTransformFraction(
+          instance,
+          applied.point,
+          currentRotation,
+          applied.point,
+          targetRotation,
+        );
+        if (rotationFraction < 1) {
+          // Una rotazione parziale non aderirebbe a nessuna delle due facce: il prefisso valido termina al bordo.
+          blockedByCollision = true;
+          break;
+        }
+      }
+      if (waypoint.kind === 'translation') {
+        const segment = waypoint.point.clone().sub(applied.point);
+        const fraction = physics.allowedTranslationFraction(instance.physics, applied.point, currentRotation, segment);
+        if (fraction < 1) {
+          applied = { ...applied, point: applied.point.clone().addScaledVector(segment, fraction) };
+          break;
+        }
+        if (!isTransformPathValid(
+          instance,
+          applied.point,
+          currentRotation,
+          waypoint.point,
+          targetRotation,
+        )) {
+          const maximumFraction = maximumValidTransformFraction(
+            instance,
+            applied.point,
+            currentRotation,
+            waypoint.point,
+            targetRotation,
+          );
+          if (maximumFraction > 0) {
+            applied = { ...applied, point: applied.point.clone().lerp(waypoint.point, maximumFraction) };
+            currentRotation = currentRotation.clone().slerp(targetRotation, maximumFraction);
+          }
+          blockedByCollision = true;
+          break;
+        }
+      }
+      applied = { triangleId: waypoint.triangleId, point: waypoint.point.clone(), normal: waypoint.normal.clone() };
+      currentRotation = targetRotation;
+      if (waypoint.kind === 'normal-change') appliedTransitions += 1;
     }
-    const normal = resolveContactNormal(contact.normal, instance.lastValidNormal, new Vector3(0, 0, 1));
-    const currentRotation = instance.physics.body.rotation();
-    const nextRotation = orientationFromNormal(normal, instance.twistRadians);
-    if (!physics.canPlaceWithoutHoldOverlap(instance.physics, contact.point, nextRotation)) {
-      physics.setKinematicTransform(instance.physics, beforeRaw, currentRotation);
-      return;
+
+    physics.setKinematicTransform(instance.physics, applied.point, currentRotation);
+    instance.localNormal = applied.normal.clone();
+    instance.lastValidNormal = applied.normal.clone();
+    instance.contactPoint = applied.point.clone();
+    instance.supportFeatureId = applied.triangleId;
+    instance.lastSurfaceStopReason = blockedByCollision ? 'collision' : path.completed ? null : path.stopReason;
+    instance.surfaceTransitions += appliedTransitions;
+  }
+
+
+
+  /** Valida traslazione e rotazione combinate campionando il primo percorso continuo. */
+  function isTransformPathValid(
+    instance: HoldSceneInstance,
+    fromPosition: Vector3,
+    fromRotation: Quaternion,
+    toPosition: Vector3,
+    toRotation: Quaternion,
+  ): boolean {
+    const angularSteps = Math.ceil(fromRotation.angleTo(toRotation)
+      / GEOMETRY_CONFIG.maximumRotationSubstepRadians);
+    const linearSteps = Math.ceil(fromPosition.distanceTo(toPosition)
+      / GEOMETRY_CONFIG.maximumTranslationSubstepMeters);
+    const steps = Math.max(1, angularSteps, linearSteps);
+    for (let step = 1; step <= steps; step += 1) {
+      const fraction = step / steps;
+      const position = fromPosition.clone().lerp(toPosition, fraction);
+      const rotation = fromRotation.clone().slerp(toRotation, fraction);
+      if (!physics.canPlaceWithoutPenetration(instance.physics, position, rotation)) return false;
     }
-    physics.setKinematicTransform(instance.physics, contact.point, nextRotation);
-    instance.localNormal = normal;
-    instance.lastValidNormal = normal.clone();
-    instance.contactPoint = contact.point.clone();
+    return true;
+  }
+
+  /** Trova la massima frazione valida della trasformazione combinata. */
+  function maximumValidTransformFraction(
+    instance: HoldSceneInstance,
+    fromPosition: Vector3,
+    fromRotation: Quaternion,
+    toPosition: Vector3,
+    toRotation: Quaternion,
+  ): number {
+    return findMaximumValidFraction((fraction) =>
+      physics.canPlaceWithoutPenetration(
+        instance.physics,
+        fromPosition.clone().lerp(toPosition, fraction),
+        fromRotation.clone().slerp(toRotation, fraction),
+      ));
   }
 
   /** Sgancia a 25 cm lungo la normale e ripristina l'orientamento iniziale completo. */
@@ -417,25 +562,66 @@ export async function createWallScene(
     const contactPoint = instance.contactPoint;
     if (!contactPoint) return;
     const target = contactPoint.clone().addScaledVector(instance.localNormal, DETACH_DISTANCE_METERS);
-    if (!physics.canPlaceWithoutHoldOverlap(instance.physics, target, instance.initialRotation)) return;
+    const currentRotation = instance.physics.body.rotation();
+    if (!isTransformPathValid(
+      instance,
+      contactPoint,
+      new Quaternion(currentRotation.x, currentRotation.y, currentRotation.z, currentRotation.w),
+      target,
+      instance.initialRotation,
+    )) return;
     physics.setKinematicTransform(instance.physics, target, instance.initialRotation);
     instance.attachment = 'pre-snap';
     instance.contactPoint = null;
+    instance.supportFeatureId = null;
+    instance.lastSurfaceStopReason = null;
   }
 
-  /** Cerca il contatto parete lungo la normale entrante e normalizza i dati Rapier. */
-  function findWallContact(origin: Vector3, outwardNormal: Vector3, maxDistance: number): {
-    point: Vector3;
-    normal: Vector3;
-    distance: number;
-  } | null {
-    const direction = outwardNormal.clone().normalize().negate();
-    const hit = physics.castRayToWall(origin, direction, maxDistance);
-    if (!hit) return null;
-    const point = new Vector3(hit.point.x, hit.point.y, hit.point.z);
-    const normal = new Vector3(hit.normal.x, hit.normal.y, hit.normal.z);
-    if (normal.dot(direction) > 0) normal.negate();
-    return { point, normal, distance: hit.distance };
+  /** Trova punto e normale locali senza assumere che la parete sia ortogonale a Z. */
+  function findClosestWallSurface(position: Vector3, lastNormal: Vector3 | null): WallSurfaceContact | null {
+    const projection = physics.projectPointToWall(position);
+    if (!projection) return null;
+    const point = new Vector3(projection.point.x, projection.point.y, projection.point.z);
+    const triangleNormal = projection.featureType === RAPIER.FeatureType.Face
+      ? wallTriangleNormal(wall.triMesh, projection.featureId)
+      : null;
+    const normal = resolveContactNormal(triangleNormal, lastNormal, new Vector3(0, 0, 1));
+    if (normal.dot(new Vector3().subVectors(position, point)) < 0) normal.negate();
+    return { point, normal, distance: projection.distance, featureId: projection.featureId };
+  }
+
+  /** Acquisisce il pannello locale, pre-allinea la hold e completa lo snap entro 5 cm. */
+  function updatePreSnapSurface(instance: HoldSceneInstance, allowSnap = false): void {
+    const raw = instance.physics.body.translation();
+    const surface = findClosestWallSurface(new Vector3(raw.x, raw.y, raw.z), instance.lastValidNormal);
+    if (!surface) return;
+    updatePreSnapNormal(instance, surface);
+    if (allowSnap && isWithinSnapDistance(surface.distance)) {
+      snapHold(instance, surface);
+    }
+  }
+
+  /** Aggiorna la normale candidata e orienta la base prima che il volume tocchi la parete. */
+  function updatePreSnapNormal(instance: HoldSceneInstance, surface: WallSurfaceContact): void {
+    if (surface.distance > instance.surfaceAcquisitionDistance) return;
+    if (instance.localNormal.angleTo(surface.normal) < GEOMETRY_CONFIG.normalChangeRadians) return;
+    const rotation = orientationFromNormal(surface.normal, instance.twistRadians);
+    if (!physics.canPlaceWithoutPenetration(instance.physics, instance.physics.body.translation(), rotation)) return;
+    physics.setKinematicTransform(instance.physics, instance.physics.body.translation(), rotation);
+    instance.localNormal = surface.normal.clone();
+    instance.lastValidNormal = surface.normal.clone();
+  }
+
+  /** Evita shape-cast costosi finché il volume della hold non può raggiungere il TriMesh. */
+  function isWallWithinMovementRange(
+    instance: HoldSceneInstance,
+    current: { readonly x: number; readonly y: number; readonly z: number },
+    movement: Vector3,
+  ): boolean {
+    const candidate = new Vector3(current.x, current.y, current.z).add(movement);
+    const surface = findClosestWallSurface(candidate, instance.lastValidNormal);
+    return surface !== null
+      && surface.distance <= instance.collisionRadius + movement.length() + GEOMETRY_CONFIG.collisionMarginMeters;
   }
 
   return {
@@ -462,6 +648,13 @@ export async function createWallScene(
         const object = model.createInstance();
         stagedObject = object;
         object.traverse((child) => { child.userData.holdModelId = hold.id; });
+        const holdSize = new Box3().setFromObject(object).getSize(new Vector3());
+        const holdBounds = new Box3().setFromObject(object);
+        const collisionRadius = Math.max(
+          holdBounds.min.length(),
+          holdBounds.max.length(),
+          ...boxCorners(holdBounds).map((corner) => corner.length()),
+        );
         const localNormal = new Vector3(0, 0, 1);
         const centralSpawn = frontReference.clone().add(localNormal.clone().multiplyScalar(2));
         const physicsObject = physics.createKinematicObject(
@@ -514,6 +707,11 @@ export async function createWallScene(
           contactPoint: null,
           lastValidNormal: localNormal.clone(),
           twistRadians: 0,
+          surfaceAcquisitionDistance: Math.max(holdSize.x, holdSize.y, holdSize.z) + SNAP_DISTANCE_METERS,
+          collisionRadius,
+          supportFeatureId: null,
+          lastSurfaceStopReason: null,
+          surfaceTransitions: 0,
         });
         setSelection(hold.id);
         physics.step();
@@ -582,6 +780,27 @@ function findFrontReference(root: Group, center: Vector3, bounds: Box3): Vector3
     throw new Error('Punto frontale della parete non determinabile.');
   }
   return intersections[0].point.clone();
+}
+
+/** Restituisce la normale geometrica world-space del triangolo Rapier indicato. */
+function wallTriangleNormal(triMesh: { readonly vertices: Float32Array; readonly indices: Uint32Array }, featureId: number): Vector3 | null {
+  const firstIndex = featureId * 3;
+  if (!Number.isInteger(featureId) || featureId < 0 || firstIndex + 2 >= triMesh.indices.length) return null;
+  const aOffset = triMesh.indices[firstIndex] * 3;
+  const bOffset = triMesh.indices[firstIndex + 1] * 3;
+  const cOffset = triMesh.indices[firstIndex + 2] * 3;
+  const a = new Vector3(triMesh.vertices[aOffset], triMesh.vertices[aOffset + 1], triMesh.vertices[aOffset + 2]);
+  const b = new Vector3(triMesh.vertices[bOffset], triMesh.vertices[bOffset + 1], triMesh.vertices[bOffset + 2]);
+  const c = new Vector3(triMesh.vertices[cOffset], triMesh.vertices[cOffset + 1], triMesh.vertices[cOffset + 2]);
+  const normal = b.sub(a).cross(c.sub(a));
+  return normal.lengthSq() > GEOMETRY_CONFIG.normalEpsilon ? normal.normalize() : null;
+}
+
+/** Elenca gli otto vertici dell'AABB locale per ricavarne una sfera conservativa. */
+function boxCorners(bounds: Box3): Vector3[] {
+  return [bounds.min.x, bounds.max.x].flatMap((x) =>
+    [bounds.min.y, bounds.max.y].flatMap((y) =>
+      [bounds.min.z, bounds.max.z].map((z) => new Vector3(x, y, z))));
 }
 
 /** Risale dalla mesh colpita fino alla radice istanza annotata. */

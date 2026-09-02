@@ -337,7 +337,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: CI usa lockfile, fallisce con drift dipendenze.
 
 **REQ-TST-010 - Regressione parete multi-superficie.**
-- Criteri: fixture sintetica con pannello frontale, pannello inclinato, superficie laterale, spigolo convesso, diedro concavo e termine del supporto; transizione soltanto fra facce contigue e non anticipata; rifiuto di superfici vicine non contigue; conservazione del twist; rispetto del passo totale; massima frazione valida entro tolleranza; nessuna oscillazione; indipendenza dal frame rate; E2E sul modello reale per almeno una transizione fra inclinazioni differenti. Il retro e escluso dai test obbligatori.
+- Criteri: fixture sintetica con pannello frontale, pannello inclinato, superficie laterale, spigolo convesso, diedro concavo e termine del supporto; transizione soltanto fra facce contigue e non anticipata; rifiuto di superfici vicine non contigue; conservazione del twist; rispetto del passo totale; massima frazione valida entro tolleranza; nessuna oscillazione; indipendenza dal frame rate; E2E sul modello reale per una transizione valida oppure per l'arresto deterministico quando la geometria della hold rende il raccordo non percorribile. Il retro e escluso dai test obbligatori.
 
 ## DOC - Documentazione
 

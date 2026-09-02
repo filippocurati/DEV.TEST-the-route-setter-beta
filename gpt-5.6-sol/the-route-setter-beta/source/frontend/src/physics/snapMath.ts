@@ -1,8 +1,9 @@
 import { Quaternion, Vector3 } from 'three';
+import { GEOMETRY_CONFIG } from './geometryConfig';
 
 export const SNAP_DISTANCE_METERS = 0.05;
 export const DETACH_DISTANCE_METERS = 0.25;
-const NORMAL_EPSILON = 1e-8;
+const NORMAL_EPSILON = GEOMETRY_CONFIG.normalEpsilon;
 
 /** Contatto minimo usato per il tie-break stabile. */
 export interface ContactCandidate {
@@ -36,11 +37,17 @@ export function resolveContactNormal(
 
 /** Proietta un asse vista sul piano tangente con fallback deterministico. */
 export function projectAxisOnTangent(axis: Vector3, normal: Vector3, fallbackAxis: Vector3): Vector3 {
-  const projected = axis.clone().addScaledVector(normal, -axis.dot(normal));
+  const normalizedNormal = resolveContactNormal(normal, null);
+  const projected = axis.clone().addScaledVector(normalizedNormal, -axis.dot(normalizedNormal));
   if (projected.lengthSq() > NORMAL_EPSILON) return projected.normalize();
-  const fallback = fallbackAxis.clone().addScaledVector(normal, -fallbackAxis.dot(normal));
+  const fallback = fallbackAxis.clone().addScaledVector(normalizedNormal, -fallbackAxis.dot(normalizedNormal));
   if (fallback.lengthSq() > NORMAL_EPSILON) return fallback.normalize();
-  return new Vector3(1, 0, 0).cross(normal).normalize();
+  const leastAlignedAxis = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)]
+    .sort((left, right) => Math.abs(left.dot(normalizedNormal)) - Math.abs(right.dot(normalizedNormal)))[0];
+  return leastAlignedAxis.addScaledVector(
+    normalizedNormal,
+    -leastAlignedAxis.dot(normalizedNormal),
+  ).normalize();
 }
 
 /** Orienta l'asse locale +Z della hold sulla normale, applicando poi il twist richiesto. */

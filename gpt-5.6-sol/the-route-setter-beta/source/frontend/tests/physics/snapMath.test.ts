@@ -43,6 +43,18 @@ describe('snap deterministico', () => {
     expect(fallback.toArray()).toEqual([0, 1, 0]);
   });
 
+  it('costruisce una tangente finita anche su una parete con normale laterale', () => {
+    const tangent = projectAxisOnTangent(
+      new Vector3(1, 0, 0),
+      new Vector3(1, 0, 0),
+      new Vector3(1, 0, 0),
+    );
+
+    expect(tangent.length()).toBeCloseTo(1, 6);
+    expect(tangent.dot(new Vector3(1, 0, 0))).toBeCloseTo(0, 6);
+    expect(tangent.toArray().every(Number.isFinite)).toBe(true);
+  });
+
   it('allinea +Z alla normale e ruota soltanto attorno ad essa', () => {
     const normal = new Vector3(0, 1, 0);
     const orientation = orientationFromNormal(normal);

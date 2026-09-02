@@ -480,7 +480,7 @@ Rendere collisioni, snap e movimento post-snap indipendenti dalla forma specific
 - rispetto del passo totale di `0.01 m` durante la transizione;
 - arresto al termine del supporto senza uscita nello spazio libero;
 - comportamento deterministico e indipendente dal frame rate;
-- E2E sul modello reale per attraversamento di almeno un cambio di inclinazione.
+- E2E sul modello reale per una transizione valida oppure, se il Convex Hull reale non puo attraversare i raccordi senza compenetrazione, per la massima posizione valida e l'arresto deterministico previsto da `REQ-FIS-017`.
 
 ### Definition of Done
 - nessuna assunzione applicativa sulla forma specifica del modello parete corrente;

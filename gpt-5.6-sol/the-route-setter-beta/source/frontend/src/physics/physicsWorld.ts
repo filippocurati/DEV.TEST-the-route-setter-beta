@@ -2,14 +2,15 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Object3D, Quaternion, Vector3 } from 'three';
 import type { WallTriMeshData } from '../scene/wallTriMesh';
 import { initializeRapier, type RapierApi } from './rapierRuntime';
+import { GEOMETRY_CONFIG } from './geometryConfig';
 import {
   synchronizePhysicsToRendering,
   type PhysicsRenderBinding,
 } from './transformSync';
 
 const ZERO_GRAVITY = Object.freeze({ x: 0, y: 0, z: 0 });
-const CHARACTER_OFFSET_METERS = 0.001;
-const COLLISION_MARGIN_METERS = 0.001;
+const CHARACTER_OFFSET_METERS = GEOMETRY_CONFIG.collisionMarginMeters;
+const COLLISION_MARGIN_METERS = GEOMETRY_CONFIG.collisionMarginMeters;
 
 /** Corpo cinematico predisposto per una futura presa e collegabile alla relativa mesh grafica. */
 export interface KinematicPhysicsObject {
@@ -22,6 +23,14 @@ export interface WallRayContact {
   readonly point: RAPIER.Vector;
   readonly normal: RAPIER.Vector;
   readonly distance: number;
+  readonly featureId: number;
+}
+
+/** Punto della parete più vicino a una posizione, espresso in coordinate mondo. */
+export interface WallPointProjection {
+  readonly point: RAPIER.Vector;
+  readonly distance: number;
+  readonly featureType: RAPIER.FeatureType;
   readonly featureId: number;
 }
 
@@ -166,6 +175,31 @@ export class PhysicsWorld {
     return contacts.sort((left, right) => left.distance - right.distance || left.featureId - right.featureId)[0] ?? null;
   }
 
+  /** Proietta un punto sul punto più vicino dell'intero TriMesh della parete. */
+  projectPointToWall(point: RAPIER.Vector): WallPointProjection | null {
+    this.ensureActive();
+    this.world.updateSceneQueries();
+    const projection = this.world.projectPointAndGetFeature(
+      point,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (candidate) => candidate.handle === this.wallCollider.handle,
+    );
+    if (!projection || projection.collider.handle !== this.wallCollider.handle) return null;
+    return {
+      point: projection.point,
+      distance: Math.hypot(
+        point.x - projection.point.x,
+        point.y - projection.point.y,
+        point.z - projection.point.z,
+      ),
+      featureType: projection.featureType,
+      featureId: projection.featureId ?? Number.MAX_SAFE_INTEGER,
+    };
+  }
+
   /** Verifica una trasformazione candidata contro le altre hold, escludendo la parete. */
   canPlaceWithoutHoldOverlap(
     object: KinematicPhysicsObject,
@@ -185,6 +219,55 @@ export class PhysicsWorld {
       )) valid = false;
     });
     return valid;
+  }
+
+  /** Verifica una trasformazione contro hold e parete, tollerando il solo contatto superficiale. */
+  canPlaceWithoutPenetration(
+    object: KinematicPhysicsObject,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+    tolerance = COLLISION_MARGIN_METERS,
+  ): boolean {
+    if (!this.canPlaceWithoutHoldOverlap(object, translation, rotation)) return false;
+    const contact = object.collider.shape.contactShape(
+      translation,
+      rotation,
+      this.wallCollider.shape,
+      this.wallCollider.translation(),
+      this.wallCollider.rotation(),
+      tolerance,
+    );
+    return !contact || contact.distance >= -tolerance;
+  }
+
+  /** Calcola la frazione continua consentita contro le altre hold a rotazione costante. */
+  allowedTranslationFraction(
+    object: KinematicPhysicsObject,
+    from: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+    desiredDelta: RAPIER.Vector,
+  ): number {
+    this.ensureActive();
+    const requestedLength = Math.hypot(desiredDelta.x, desiredDelta.y, desiredDelta.z);
+    if (requestedLength === 0) return 1;
+    let firstToi: number | null = null;
+    this.world.forEachCollider((candidate) => {
+      if (candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+      const hit = object.collider.shape.castShape(
+        from,
+        rotation,
+        desiredDelta,
+        candidate.shape,
+        candidate.translation(),
+        candidate.rotation(),
+        { x: 0, y: 0, z: 0 },
+        1,
+        true,
+      );
+      if (hit && (firstToi === null || hit.toi < firstToi)) firstToi = hit.toi;
+    });
+    if (firstToi === null) return 1;
+    return Math.max(0, Math.min(1, firstToi - COLLISION_MARGIN_METERS / requestedLength));
   }
 
   /** Programma la rotazione cinematica che verrà applicata al prossimo step. */
@@ -228,6 +311,7 @@ export class PhysicsWorld {
   movePreSnapWithCollisions(
     object: KinematicPhysicsObject,
     desiredDelta: RAPIER.Vector,
+    includeWall = true,
   ): RAPIER.Vector {
     this.ensureActive();
     const current = object.body.translation();
@@ -237,7 +321,8 @@ export class PhysicsWorld {
 
     let firstToi: number | null = null;
     this.world.forEachCollider((candidate) => {
-      if (candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+      if (candidate.handle === object.collider.handle
+        || (!includeWall && candidate.handle === this.wallCollider.handle)) return;
       const hit = object.collider.shape.castShape(
         current,
         rotation,
