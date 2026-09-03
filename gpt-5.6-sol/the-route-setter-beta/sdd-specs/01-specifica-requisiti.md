@@ -121,7 +121,9 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - Criteri: hold non si muovono autonomamente.
 
 **REQ-FIS-003 - CCD.**
-- Criteri: niente tunneling nei test fisici.
+- Il CCD e l'assenza di tunneling si applicano alle trasformazioni reali incrementali e alle pose committate.
+- Il percorso visuale della shadow e il teletrasporto editoriale endpoint-only dei drag non sono una simulazione fisica e sono esclusi dal requisito di tunneling.
+- Criteri: nessun tunneling nei click incrementali e nei movimenti cinematici reali; un endpoint drag libero oltre un ostacolo intermedio e accettato se la posa finale e valida.
 
 **REQ-FIS-004 - KinematicCharacterController.**
 - Criteri: movimento move-and-slide con blocco componenti in collisione e mantenimento componenti libere.
@@ -146,22 +148,29 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 
 **REQ-FIS-009 - Rotazione input.**
 - La rotazione e disponibile soltanto in modalita `rotating` per una hold attached.
-- Click sulle frecce circolari: `1 grado`; drag: rotazione continua quantizzata a `1 grado`.
-- La rotazione avviene attorno alla normale di aggancio e si arresta all'ultimo angolo non compenetrante.
-- Criteri: twist conservato; pointer capture; nessuna reazione OrbitControls durante il drag; nessuna shortcut globale.
+- Click senza drag sulle frecce circolari: `1 grado`, con validazione immediata come nella prima implementazione 9UX.
+- Il drag crea una shadow 3D runtime, ruotata attorno alla normale corrente e quantizzata a `1 grado`, mentre la hold reale resta invariata.
+- Durante il drag non vengono eseguite query di collisione; al rilascio viene validata soltanto la posa endpoint.
+- Endpoint valido: commit atomico. Endpoint invalido: rollback totale, nessun angolo parziale applicato.
+- Criteri: twist candidato derivato dallo snapshot iniziale; shadow piu arco/linea; pointer capture; camera congelata; nessuna shortcut globale.
 
 **REQ-FIS-010 - Traslazione input.**
 - La traslazione e disponibile soltanto in modalita `moving` per una hold attached.
 - Quattro frecce contestuali muovono alto/basso/destra/sinistra rispetto alla vista corrente.
-- Ogni click applica `0.01 m`; la pressione prolungata ripete il comando.
-- Le direzioni derivano dalla proiezione degli assi vista sul piano tangente locale.
-- Criteri: nessun comando avanti/indietro; pointer release/cancel arresta la ripetizione; nessuna shortcut globale.
+- Ogni click senza drag applica `0.01 m`; piu click singoli producono piu passi indipendenti.
+- Ogni freccia e anche origine di un drag lungo la propria direzione screen-space; la componente pointer perpendicolare viene ignorata.
+- Durante il drag la hold reale resta invariata, una shadow 3D runtime segue aderente alla parete e una linea/freccia gialla mostra origine e target richiesto.
+- Durante il drag non vengono eseguite query di collisione; al rilascio viene validata soltanto la posa endpoint.
+- Endpoint valido: commit atomico di posizione, normale e inclinazione. Endpoint invalido: rollback totale, nessuna posizione parziale applicata.
+- Criteri: nessun comando avanti/indietro; nessun limite totale di distanza; pointer release committa o annulla; pointercancel/Escape annullano; nessuna shortcut globale.
 
 **REQ-FIS-011 - No compenetrazione.**
 - Tutto il TriMesh, incluso il retro non classificato, e impenetrabile durante spostamento, rotazione e sgancio.
 - Aggancio e sgancio diretto validano la posa finale candidata ma non simulano il percorso editoriale verso la destinazione.
 - Il contatto a distanza zero e valido; la tolleranza numerica massima di penetrazione accettata e `0.001 m`.
-- Criteri: Convex Hull non penetra parete o altre hold oltre `0.001 m` nelle pose committate; spostamento e rotazione si arrestano all'ultima posa valida.
+- I click incrementali di spostamento e rotazione continuano ad arrestarsi all'ultima posa valida.
+- I drag di spostamento e rotazione validano esclusivamente l'endpoint al rilascio; il percorso puo attraversare ostacoli per scelta editoriale esplicita.
+- Criteri: ogni posa committata rispetta la tolleranza di `0.001 m`; endpoint drag invalido annulla integralmente il drag; nessun commit parziale.
 
 **REQ-FIS-012 - Separazione mesh/collider.**
 - Criteri: fisica usa solo collider Rapier.
@@ -177,7 +186,9 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 **REQ-FIS-015 - Vincolo alla superficie di aggancio.**
 - Al momento dell'aggancio viene memorizzata la normale stabilizzata di aggancio.
 - Durante `Sposta` la hold puo seguire piccole variazioni locali pur restando aderente, ma la normale candidata deve rimanere entro `5 gradi` dalla normale di aggancio.
-- Un diedro, spigolo, prominenza o cambio di inclinazione oltre soglia arresta il movimento all'ultima posa valida.
+- Durante il drag la shadow viene proiettata incrementalmente sulla parete e resta aderente; non vengono eseguite collision query.
+- Un diedro, spigolo, prominenza, gap o cambio di inclinazione oltre soglia arresta la shadow all'ultimo candidato geometricamente ammissibile.
+- Al rilascio la normale endpoint viene nuovamente verificata rispetto alla normale di aggancio.
 - Criteri: nessuna transizione automatica fra superfici; per cambiare superficie sono necessari `Sgancia` e un nuovo `Aggancia`.
 
 ## HUL - Convex Hull backend
@@ -238,11 +249,12 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Stati fisici hold: `detached`, `attached`.
 - Modalita UI: `idle`, `attach-targeting`, `moving`, `rotating`.
 - Le modalita sono mutuamente esclusive; cambio selezione, rimozione, blur, `Escape` e pointer cancel interrompono le interazioni attive secondo il design.
-- Criteri: una sola modalita attiva; nessun timer o pointer capture resta attivo dopo l'uscita.
+- Le modalita moving/rotating possono contenere una sessione drag transazionale con snapshot iniziale e posa candidata.
+- Criteri: una sola modalita attiva; una sola sessione drag; nessun timer, pointer capture, shadow o materiale preview resta attivo dopo l'uscita.
 
 **REQ-UX-003 - Cerchio target.**
-- Il target e un overlay DOM/SVG circolare pieno e trasparente, giallo in stato ordinario e rosso dopo un tentativo invalido.
-- Il diametro deriva dal bounding box proiettato della base della hold ed e limitato fra `48 px` e `160 px`.
+- Il target rappresenta un disco circolare tangente alla superficie nel punto colpito; la sua proiezione DOM/SVG appare come un'ellisse piena e trasparente, gialla in stato ordinario e rossa dopo un tentativo invalido.
+- Assi, rapporto e rotazione dell'ellisse derivano dalla proiezione prospettica di due assi tangenti locali; il lato maggiore e limitato fra `48 px` e `160 px`, preservando il rapporto fra gli assi.
 - Durante `pointermove` viene aggiornato al massimo una volta per frame usando il ray centrale.
 - Dopo un click invalido resta rosso per `500 ms` o fino al successivo movimento, poi torna giallo.
 - Criteri: parete visibile sotto il target; target assente fuori dalla parete; overlay escluso dall'export.
@@ -267,21 +279,27 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UX-006 - Gizmo rotazione.**
 - Due frecce circolari DOM/SVG attorno alla hold selezionata.
-- Click = `1 grado`; drag = passi quantizzati di `1 grado`.
+- Click senza drag = `1 grado` con commit immediato.
+- Drag = shadow 3D trasparente piu arco/linea gialla; angolo candidato quantizzato a `1 grado` e calcolato dallo snapshot iniziale.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
-- Durante il drag OrbitControls e disabilitato per il pointer catturato.
-- Criteri: rotazione bloccata all'ultimo angolo valido; cleanup su pointerup, pointercancel e lostpointercapture.
+- Durante il drag OrbitControls, zoom e pan sono completamente disabilitati.
+- Nessuna validazione fisica avviene su pointermove; al pointerup si valida una sola volta l'endpoint e si committa o annulla integralmente.
+- Criteri: hold reale immutata durante drag; endpoint valido committato una volta; endpoint invalido lascia posa e twist iniziali; cleanup su pointerup, pointercancel, lostpointercapture, blur, cambio selezione, rimozione ed Escape.
 
 **REQ-UX-007 - Gizmo movimento.**
 - Quattro frecce DOM/SVG ai bordi della hold proiettata.
-- Click = `1 cm`; pressione prolungata = ripetizione con parametri correnti `300 ms` di ritardo e `60 ms` di intervallo.
+- Click senza drag = `1 cm`; piu click singoli restano disponibili. La pressione prolungata non avvia piu ripetizione automatica: superata la soglia drag, inizia la preview transazionale.
+- Drag dalla freccia = shadow 3D aderente alla parete piu linea/freccia gialla retta verso il target richiesto; movimento vincolato all'asse della freccia.
+- In modalita `moving`, il drag puo iniziare anche direttamente sulla mesh della hold selezionata; in questo caso il delta e libero in entrambe le dimensioni screen-space e mantiene l'offset iniziale pointer-contact point.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
-- Criteri: direzioni coerenti con lo schermo; rilascio/cancel arresta immediatamente; cambio superficie oltre 5 gradi blocca.
+- Durante pointermove sono consentiti raycast e calcoli geometrici di surface lock, ma nessuna validazione Convex Hull o collision query.
+- Al pointerup viene validato esclusivamente l'endpoint; endpoint invalido annulla integralmente il drag.
+- Criteri: direzioni coerenti con lo schermo; shadow aderente; nessun limite totale; hold reale immutata fino al commit; cambio superficie oltre 5 gradi ferma la shadow; cleanup completo su annullamento.
 
 **REQ-UX-008 - Interazione camera durante targeting.**
 - In `attach-targeting` il click sinistro e riservato al target.
 - Rotazione/pan tramite tasto destro e zoom tramite rotella restano disponibili.
-- Durante drag di gizmo la camera non reagisce allo stesso pointer.
+- Durante drag di movimento o rotazione OrbitControls, zoom e pan sono completamente congelati fino alla chiusura della sessione.
 - Criteri: target e popup si riallineano dopo camera/resize; nessun doppio comando camera+hold.
 
 **REQ-UX-009 - Piattaforma di input.**
@@ -290,7 +308,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: flussi E2E eseguiti con mouse desktop Chromium; nessuna promessa di parita touch.
 
 **REQ-UX-010 - Risultati e feedback.**
-- Le azioni scena restituiscono esiti distinguibili: `applied`, `blocked`, `invalid-target`, `not-available`, con motivo non tecnico.
+- Le azioni scena restituiscono esiti distinguibili: `applied`, `blocked`, `invalid-target`, `not-available`, `previewing`, `committed`, `cancelled`, `invalid-endpoint`, `surface-limit`, con motivo non tecnico.
 - Criteri: nessun messaggio `comando applicato` quando la trasformazione non avviene; errore locale non chiude il popup o la modalita salvo necessita.
 
 ## IMG - Generazione immagine
@@ -299,7 +317,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: l'export mantiene esattamente posizione, orientamento, zoom, proiezione prospettica e rapporto d'aspetto della camera interattiva corrente.
 
 **REQ-IMG-002 - Output della sola scena.**
-- Criteri: l'immagine contiene esclusivamente il rendering 3D visibile nella viewport, senza catalogo, menu, popup, target, hint o gizmo; lo sfondo corrisponde a quello corrente della scena.
+- Criteri: l'immagine contiene esclusivamente il rendering 3D committato, senza catalogo, menu, popup, target, hint, gizmo, linee, archi o shadow 3D; lo sfondo corrisponde a quello corrente della scena.
 
 **REQ-IMG-003 - Formato.**
 - Criteri: file JPG valido ad alta risoluzione.
@@ -316,7 +334,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: almeno 40 hold + parete interattive.
 
 **REQ-PRF-003 - Reattivita.**
-- Criteri: risposta percepita immediata sui comandi principali.
+- Criteri: risposta percepita immediata sui comandi principali; preview drag aggiornata al massimo una volta per frame; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; movimento preview usa al massimo i raycast geometrici necessari ai sottopassi locali; validazione endpoint tipica <= `50 ms`, caso complesso <= `100 ms`, nessun long task > `200 ms`.
 
 **REQ-PRF-004 - Framerate.**
 - Criteri: target indicativo >= 30 FPS durante interazione.
@@ -395,7 +413,8 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: CI usa lockfile, fallisce con drift dipendenze.
 
 **REQ-TST-010 - Test interazione contestuale 9UX.**
-- Criteri: copertura automatica popup, stati, targeting, superficie dominante, target invalido, aggancio diretto, sgancio progressivo, rotazione drag, movimento hold-to-repeat, blocco a 5 gradi, cleanup pointer/timer, assenza shortcut legacy, coordinamento OrbitControls, rimozione contestuale ed esclusione overlay dall'export.
+- Criteri: copertura automatica popup, stati, targeting, superficie dominante, target invalido, aggancio diretto, sgancio progressivo e click incrementali.
+- Criteri drag: shadow creata senza richieste PNG/GLB/asset; geometrie e texture condivise; nessun rigid body/collider; shadow esclusa dal picking; hold reale, collider, contact point, normale e twist immutati durante pointermove; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; movimento shadow aderente e bloccato a 5 gradi; rotazione quantizzata a 1 grado; linea/arco coerenti; nessun limite totale alla distanza richiesta; esattamente una fase di validazione endpoint al pointerup; endpoint valido committato una sola volta; endpoint invalido con rollback totale di tutti gli stati; endpoint libero oltre ostacolo intermedio accettato; cleanup pointer/materiali/preview; camera congelata; shadow esclusa dall'export; nessuna perdita risorse dopo drag ripetuti.
 
 ## DOC - Documentazione
 

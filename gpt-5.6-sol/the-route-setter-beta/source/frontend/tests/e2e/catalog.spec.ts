@@ -67,7 +67,7 @@ test.describe('catalogo prese', () => {
     await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
     const scene = await page.evaluate(() => window.__ROUTE_SETTER_SCENE__);
     expect(scene?.holdInstanceIds).toEqual(['Hold1']);
-    expect(scene?.holdStates.Hold1.attachment).toBe('pre-snap');
+    expect(scene?.holdStates.Hold1.physicalState).toBe('detached');
     expect(scene!.selectedHoldPosition![2] - scene!.wallFrontReference[2]).toBeCloseTo(2, 4);
     expect(scene?.holdStates.Hold1.localNormal).toEqual([0, 0, 1]);
     expect(scene?.holdStates.Hold1.intersectsAtSpawn).toBe(false);
@@ -75,7 +75,7 @@ test.describe('catalogo prese', () => {
     expect(requests).toContain('/api/holds/Hold1/collider');
     expect(requests.filter((path) => path.endsWith('/model'))).toHaveLength(1);
 
-    await page.getByRole('button', { name: 'Rimuovi presa' }).click();
+    await page.getByRole('toolbar', { name: 'Azioni presa selezionata' }).getByRole('button', { name: 'Rimuovi' }).click();
 
     await expect(page.locator('[data-hold-id="Hold1"]')).toBeVisible();
     await expect(page.locator('[data-catalog-count]')).toHaveText('2');

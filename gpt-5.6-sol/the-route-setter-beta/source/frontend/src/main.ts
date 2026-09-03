@@ -2,12 +2,7 @@ import './style.css';
 import type { HoldManifest } from './api/holdApi';
 import { HoldDetailsModal } from './catalog/holdDetailsModal';
 import { SessionCatalog } from './catalog/sessionCatalog';
-import {
-  commandForKeyboardCode,
-  ContinuousCommandController,
-  isEditableTarget,
-  type HoldCommand,
-} from './input/holdCommands';
+import { HoldOverlay } from './interaction/holdOverlay';
 import { createWallScene } from './scene/wallScene';
 import { downloadGuideImage } from './export/guideImage';
 
@@ -27,7 +22,6 @@ async function bootstrap(): Promise<void> {
         </div>
         <nav class="topbar-actions" aria-label="Comandi tracciatura">
           <button type="button" data-generate-image disabled>Genera immagine</button>
-          <button type="button" data-remove-hold disabled>Rimuovi presa</button>
         </nav>
         <p class="scene-status" role="status" data-scene-status>Caricamento parete...</p>
       </header>
@@ -44,23 +38,6 @@ async function bootstrap(): Promise<void> {
           <div class="catalog-list" data-catalog-list></div>
         </aside>
         <section class="viewport" aria-label="Scena tridimensionale della parete" data-viewport>
-          <div class="hold-controls" data-hold-controls aria-label="Comandi presa selezionata">
-            <div class="move-pad" aria-label="Spostamento presa">
-              <button type="button" data-hold-command="move-up" aria-label="Sposta presa su" title="Su (Freccia su)">↑</button>
-              <button type="button" data-hold-command="move-left" aria-label="Sposta presa a sinistra" title="Sinistra (Freccia sinistra)">←</button>
-              <button type="button" data-hold-command="move-down" aria-label="Sposta presa giù" title="Giù (Freccia giù)">↓</button>
-              <button type="button" data-hold-command="move-right" aria-label="Sposta presa a destra" title="Destra (Freccia destra)">→</button>
-            </div>
-            <div class="normal-controls" aria-label="Distanza dalla parete">
-              <button type="button" data-hold-command="move-forward" aria-label="Avvicina presa alla parete" title="Avanti (Shift + Freccia su)">Avanti</button>
-              <button type="button" data-hold-command="move-backward" aria-label="Allontana presa dalla parete" title="Indietro (Shift + Freccia giù)">Indietro</button>
-            </div>
-            <div class="rotate-controls" aria-label="Rotazione presa">
-              <button type="button" data-hold-command="rotate-counterclockwise" aria-label="Ruota presa in senso antiorario" title="Antiorario (Q)">↶</button>
-              <button type="button" data-hold-command="rotate-clockwise" aria-label="Ruota presa in senso orario" title="Orario (E)">↷</button>
-            </div>
-            <p>Frecce: sposta 1 cm · Shift+↑/↓: avanti/indietro · Q/E: ruota 1°</p>
-          </div>
         </section>
       </div>
     </main>
@@ -81,9 +58,7 @@ async function bootstrap(): Promise<void> {
   const list = requiredElement<HTMLElement>(app, '[data-catalog-list]');
   const count = requiredElement<HTMLElement>(app, '[data-catalog-count]');
   const feedback = requiredElement<HTMLElement>(app, '[data-catalog-feedback]');
-  const removeButton = requiredElement<HTMLButtonElement>(app, '[data-remove-hold]');
   const generateButton = requiredElement<HTMLButtonElement>(app, '[data-generate-image]');
-  const commandButtons = [...app.querySelectorAll<HTMLButtonElement>('[data-hold-command]')];
   const details = new HoldDetailsModal(requiredElement<HTMLDialogElement>(app, '[data-details-dialog]'));
   const catalog = new SessionCatalog();
 
@@ -114,7 +89,6 @@ async function bootstrap(): Promise<void> {
             try {
               await scene.addHold(hold);
               feedback.textContent = `${hold.id} aggiunta alla scena.`;
-              removeButton.disabled = false;
             } catch (error) {
               catalog.release(hold.id);
               feedback.textContent = error instanceof Error ? error.message : 'Impossibile aggiungere la presa.';
@@ -152,52 +126,7 @@ async function bootstrap(): Promise<void> {
       }
     });
 
-    const updateSelectionUi = (selectedId: string | null): void => {
-      removeButton.disabled = selectedId === null;
-      commandButtons.forEach((button) => { button.disabled = selectedId === null; });
-      if (selectedId) feedback.textContent = `${selectedId} selezionata.`;
-    };
-    scene.onSelectionChange(updateSelectionUi);
-
-    const continuousCommands = new ContinuousCommandController();
-    const executeCommand = (command: HoldCommand): void => {
-      if (scene.executeCommand(command)) {
-        const selected = scene.selectedHoldId();
-        if (selected) feedback.textContent = `${selected}: comando applicato.`;
-      }
-    };
-    commandButtons.forEach((button) => {
-      const command = button.dataset.holdCommand as HoldCommand;
-      const key = `button:${command}`;
-      button.addEventListener('mousedown', (event) => {
-        if (button.disabled || event.button !== 0) return;
-        event.preventDefault();
-        continuousCommands.start(key, command, executeCommand);
-      });
-      const stop = (): void => continuousCommands.stop(key);
-      window.addEventListener('mouseup', stop);
-      button.addEventListener('pointerdown', (event) => {
-        if (button.disabled || event.pointerType === 'mouse') return;
-        event.preventDefault();
-        continuousCommands.start(key, command, executeCommand);
-      });
-      window.addEventListener('pointerup', (event) => {
-        if (event.pointerType !== 'mouse') stop();
-      });
-      window.addEventListener('pointercancel', (event) => {
-        if (event.pointerType !== 'mouse') stop();
-      });
-    });
-    window.addEventListener('keydown', (event) => {
-      const command = commandForKeyboardCode(event.code, event.shiftKey);
-      if (!command || isEditableTarget(event.target)) return;
-      event.preventDefault();
-      continuousCommands.start(`key:${event.code}`, command, executeCommand);
-    });
-    window.addEventListener('keyup', (event) => continuousCommands.stop(`key:${event.code}`));
-    window.addEventListener('blur', () => continuousCommands.stopAll());
-
-    removeButton.addEventListener('click', () => {
+    const removeSelected = (): void => {
       const selectedId = scene.selectedHoldId();
       if (!selectedId || !scene.removeHold(selectedId)) {
         return;
@@ -205,6 +134,45 @@ async function bootstrap(): Promise<void> {
       catalog.release(selectedId);
       feedback.textContent = `${selectedId} riportata nel catalogo.`;
       void renderCatalog();
+    };
+    const overlay = new HoldOverlay(viewport, {
+      attach: () => scene.beginAttachTargeting(),
+      detach: () => scene.detachSelected(),
+      moveMode: () => scene.beginMoving(),
+      move: (direction) => scene.moveSelected(direction),
+      beginMoveDrag: (direction, point, pointerId) => scene.beginMoveDrag(direction, point, pointerId),
+      updateMoveDrag: (point, pointerId) => scene.updateMoveDrag(point, pointerId),
+      commitMoveDrag: (pointerId) => scene.commitMoveDrag(pointerId),
+      rotateMode: () => scene.beginRotating(),
+      rotate: (direction, steps) => scene.rotateSelected(direction, steps),
+      beginRotationDrag: (point, pointerId) => scene.beginRotationDrag(point, pointerId),
+      updateRotationDrag: (point, pointerId) => scene.updateRotationDrag(point, pointerId),
+      commitRotationDrag: (pointerId) => scene.commitRotationDrag(pointerId),
+      cancelTransformDrag: () => scene.cancelTransformDrag(),
+      remove: removeSelected,
+      cancel: () => scene.cancelInteraction(),
+      setOrbitEnabled: (enabled) => scene.setOrbitEnabled(enabled),
+      feedback: (action) => { feedback.textContent = action.message; },
+    });
+    let lastActionResult = scene.interactionSnapshot().lastActionResult;
+    scene.onInteractionChange((snapshot) => {
+      overlay.update(snapshot);
+      if (!document.documentElement.dataset.exporting) generateButton.disabled = snapshot.dragPreview !== null;
+      if (snapshot.lastActionResult !== lastActionResult) {
+        lastActionResult = snapshot.lastActionResult;
+        if (lastActionResult) feedback.textContent = lastActionResult.message;
+      }
+      if (snapshot.selected) feedback.textContent ||= `${snapshot.selected.id} selezionata.`;
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      overlay.cancel();
+      scene.cancelInteraction();
+      feedback.textContent = 'Modalità terminata.';
+    });
+    window.addEventListener('blur', () => {
+      overlay.cancel();
+      scene.cancelInteraction();
     });
 
     await renderCatalog();

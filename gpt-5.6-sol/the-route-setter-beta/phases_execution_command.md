@@ -31,6 +31,8 @@ I file di risultato devono essere salvati nella cartella phases-outcome.
 
 Non sovrascrivere o rimuovere mai file relativi al risultato di un'esecuzione di una fase, se un file con lo stesso nome esiste già, generalo con un suffisso che rappresenta un contatore dei tentativi di esecuzione.
 
+Eccezione vincolante: la reimplementazione drag transazionale della FASE 9UX deve creare esattamente `Phase_9UX-bis_implementation_done.md` in caso di successo oppure `Phase_9UX-bis_implementation_block.md` in caso di blocco. Il file `Phase_9UX_implementation_done.md` deve essere mantenuto come storico e non deve essere sovrascritto, rimosso o rinominato.
+
 Per entrambi i file al posto del placeholder [X] deve essere riportato il numero della fase processata.
 Il contentuto del file generato deve rispettare i punti sopra indicati, nel caso di blocco a causa di errori deve essere ben documentato il punto 4 relativo ai problemi riscontrati.
 

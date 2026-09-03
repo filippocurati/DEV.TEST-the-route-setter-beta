@@ -10,6 +10,7 @@ import {
 const ZERO_GRAVITY = Object.freeze({ x: 0, y: 0, z: 0 });
 const CHARACTER_OFFSET_METERS = 0.001;
 const COLLISION_MARGIN_METERS = 0.001;
+export const MAX_PENETRATION_METERS = 0.001;
 
 /** Corpo cinematico predisposto per una futura presa e collegabile alla relativa mesh grafica. */
 export interface KinematicPhysicsObject {
@@ -23,6 +24,11 @@ export interface WallRayContact {
   readonly normal: RAPIER.Vector;
   readonly distance: number;
   readonly featureId: number;
+}
+
+export interface PoseValidation {
+  readonly valid: boolean;
+  readonly blocker: 'wall' | 'hold' | null;
 }
 
 /** Fondazione fisica client-side della sessione, priva di dipendenze REST. */
@@ -134,36 +140,75 @@ export class PhysicsWorld {
   /** Cerca il contatto più vicino con il solo collider parete lungo il raggio indicato. */
   castRayToWall(origin: RAPIER.Vector, direction: RAPIER.Vector, maxDistance: number): WallRayContact | null {
     this.ensureActive();
-    this.world.updateSceneQueries();
     const directionLength = Math.hypot(direction.x, direction.y, direction.z);
     if (directionLength === 0) return null;
     const ray = new this.rapier.Ray(origin, direction);
-    const contacts: WallRayContact[] = [];
-    this.world.intersectionsWithRay(
-      ray,
-      maxDistance,
-      true,
-      (hit) => {
-        if (hit.collider.handle !== this.wallCollider.handle) return true;
-        contacts.push({
-          point: {
-            x: origin.x + direction.x * hit.toi,
-            y: origin.y + direction.y * hit.toi,
-            z: origin.z + direction.z * hit.toi,
-          },
-          normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z },
-          distance: hit.toi * directionLength,
-          featureId: hit.featureId ?? Number.MAX_SAFE_INTEGER,
-        });
-        return true;
+    const hit = this.wallCollider.castRayAndGetNormal(ray, maxDistance, true);
+    if (!hit) return null;
+    return {
+      point: {
+        x: origin.x + direction.x * hit.toi,
+        y: origin.y + direction.y * hit.toi,
+        z: origin.z + direction.z * hit.toi,
       },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      (candidate) => candidate.handle === this.wallCollider.handle,
-    );
-    return contacts.sort((left, right) => left.distance - right.distance || left.featureId - right.featureId)[0] ?? null;
+      normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z },
+      distance: hit.toi * directionLength,
+      featureId: hit.featureId ?? Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  /** Valida una posa completa consentendo il contatto e rifiutando penetrazioni oltre 1 mm. */
+  validatePose(
+    object: KinematicPhysicsObject,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+    outwardNormal?: RAPIER.Vector,
+  ): PoseValidation {
+    this.ensureActive();
+    if (outwardNormal) {
+      const length = Math.hypot(outwardNormal.x, outwardNormal.y, outwardNormal.z);
+      const offset = length > 0 ? MAX_PENETRATION_METERS / length : 0;
+      const wallIntersects = object.collider.shape.intersectsShape(
+        {
+          x: translation.x + outwardNormal.x * offset,
+          y: translation.y + outwardNormal.y * offset,
+          z: translation.z + outwardNormal.z * offset,
+        },
+        rotation,
+        this.wallCollider.shape,
+        this.wallCollider.translation(),
+        this.wallCollider.rotation(),
+      );
+      if (wallIntersects) return { valid: false, blocker: 'wall' };
+    } else {
+      const wallContact = object.collider.shape.contactShape(
+        translation,
+        rotation,
+        this.wallCollider.shape,
+        this.wallCollider.translation(),
+        this.wallCollider.rotation(),
+        MAX_PENETRATION_METERS,
+      );
+      if (wallContact && wallContact.distance < -MAX_PENETRATION_METERS) {
+        return { valid: false, blocker: 'wall' };
+      }
+    }
+    let blocker: PoseValidation['blocker'] = null;
+    this.world.forEachCollider((candidate) => {
+      if (blocker || candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+      const contact = object.collider.shape.contactShape(
+        translation,
+        rotation,
+        candidate.shape,
+        candidate.translation(),
+        candidate.rotation(),
+        MAX_PENETRATION_METERS,
+      );
+      if (contact && contact.distance < -MAX_PENETRATION_METERS) {
+        blocker = 'hold';
+      }
+    });
+    return { valid: blocker === null, blocker };
   }
 
   /** Verifica una trasformazione candidata contro le altre hold, escludendo la parete. */

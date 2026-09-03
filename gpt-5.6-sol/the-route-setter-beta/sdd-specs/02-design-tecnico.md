@@ -173,6 +173,8 @@ Durante `pointermove`:
 - usare un solo ray Rapier camera-verso-TriMesh per posizione e visibilita del cerchio;
 - non eseguire validazione completa della posa.
 
+Il target orientato viene calcolato senza query fisiche aggiuntive: dal punto e dalla normale del ray centrale costruire una base tangente ortonormale, creare due punti world a distanza pari al raggio fisico della base lungo i due assi, proiettare centro e punti nella camera e ricavare semiassi e rotazione dell'ellisse CSS/SVG. Il lato maggiore viene clamped a 48-160 px e il lato minore viene scalato dello stesso fattore per conservare il rapporto prospettico.
+
 Al click eseguire i 37 campioni definiti da `REQ-UX-004`. I campioni sono espressi in coordinate normalizzate del cerchio e trasformati in coordinate canvas prima di costruire i ray camera.
 
 ### 7.2 Raggruppamento superficie dominante
@@ -235,7 +237,7 @@ currentNormal
 twistRadians
 ```
 
-Per ogni passo:
+Per ogni click singolo:
 
 1. proiettare l'asse vista sulla tangente di `currentNormal`;
 2. calcolare il candidato di `0.01 m`;
@@ -247,13 +249,74 @@ Per ogni passo:
 
 Il confronto con `attachmentNormal`, non con la sola normale del passo precedente, impedisce di attraversare gradualmente un cambio di inclinazione accumulando piccole variazioni. La normale corrente puo invece variare entro soglia per seguire una curva senza distacco.
 
-### 7.6 Rotazione e trasformazioni continue
+### 7.6 Drag transazionale movimento
 
-Le rotazioni sono quantizzate a `1 grado`. Ogni incremento viene verificato prima dell'applicazione. Per traslazioni e rotazioni devono essere controllate pose intermedie o query sweep equivalenti; la sola validita dell'endpoint non e sufficiente. Lo sgancio editoriale verifica invece separatamente ogni posa finale candidata. In caso di blocco si mantiene l'ultima posa valida.
+Il drag non modifica lo stato fisico della hold. All'inizio viene creato:
 
-Il drag di rotazione calcola l'angolo firmato del pointer attorno al centro proiettato della hold usando `atan2`. Il delta viene normalizzato nell'intervallo `[-pi, +pi]`, accumulato e convertito in passi interi di 1 grado; il residuo inferiore a 1 grado resta accumulato fino ai movimenti successivi.
+```text
+TransformDragSession {
+  kind: move
+  pointerId
+  holdId
+  startPose
+  candidatePose
+  startContactPoint
+  candidateContactPoint
+  attachmentNormal
+  startCurrentNormal
+  candidateNormal
+  startTwistRadians
+}
+```
 
-### 7.7 Degeneri
+La direzione e fissata dalla freccia origine del drag. La distanza richiesta e la proiezione firmata del delta pointer sull'asse screen-space della freccia; la componente perpendicolare viene ignorata. La traiettoria richiesta e la linea retta fra origine e target.
+
+Se il drag inizia direttamente sulla mesh della hold selezionata, `moveDirection` e `screenAxis` sono nulli: il delta pointer completo viene applicato al contact point proiettato, conservando l'offset fra pointerdown e contact point. Il resto della pipeline geometrica, inclusi sottopassi, aderenza e surface lock, e identico al drag da freccia.
+
+Durante pointermove:
+
+1. accumulare l'ultimo evento e aggiornare al massimo una volta per frame;
+2. suddividere il delta screen-space in sottopassi geometrici massimi configurabili, inizialmente `10 px`;
+3. per ogni sottopasso eseguire un ray camera-verso-TriMesh sul target corretto dall'offset iniziale;
+4. aggiornare punto e normale candidati;
+5. accettare la preview solo se esiste continuita locale, la distanza dalla posa shadow precedente e compatibile e `angle(candidateNormal, attachmentNormal) <= 5 gradi`;
+6. arrestare la shadow all'ultimo candidato geometricamente ammissibile in caso di gap, diedro, spigolo o cambio oltre soglia;
+7. aggiornare clone 3D e linea/freccia gialla;
+8. non eseguire `validatePose`, `contactShape`, shape-cast Convex Hull o mutazioni Rapier.
+
+Al pointerup viene validata esclusivamente `candidatePose`. Non viene verificato il percorso e non viene cercato un prefisso valido. Endpoint valido: un solo commit atomico di corpo, mesh, contact point e normale. Endpoint invalido: rollback totale implicito, perche la posa reale non e mai stata modificata.
+
+### 7.7 Drag transazionale rotazione
+
+Il centro visuale e la proiezione del punto di contatto, non il centro del bounding box. La sessione conserva posa e twist iniziali. Il delta firmato del pointer viene calcolato con `atan2`, normalizzato attraversando `-pi/+pi` e applicato sempre rispetto allo snapshot iniziale. Il twist candidato e quantizzato a 1 grado.
+
+Poiche nelle coordinate CSS l'asse Y cresce verso il basso, il segno del delta visuale deve essere invertito rispetto alla convenzione matematica standard, in modo che il punto della hold vicino alla freccia selezionata segua il verso del mouse.
+
+Durante pointermove vengono aggiornati soltanto shadow e arco/linea gialla; non avvengono raycast o collision query. La shadow usa `orientationFromNormal(currentNormal, candidateTwist)`.
+
+Al pointerup viene validata esclusivamente la posa endpoint. Endpoint valido: commit atomico della rotazione e del twist. Endpoint invalido: rollback totale. Non vengono controllati angoli intermedi.
+
+### 7.8 Shadow 3D runtime
+
+La shadow viene creata a runtime clonando la gerarchia grafica dell'istanza selezionata:
+
+- geometrie e texture condivise;
+- materiali preview dedicati, trasparenti, opacita iniziale `0.35`;
+- `depthTest = true`, `depthWrite = false`;
+- nessun rigid body o collider;
+- nessun `holdModelId` e layer/gruppo escluso dal picking;
+- un solo clone preview attivo;
+- materiali preview rilasciati alla fine della sessione, geometrie/texture condivise non disposte.
+
+La shadow mostra sempre il target richiesto geometricamente ammissibile e non indica validita fisica. Una linea/freccia gialla accompagna il movimento; un arco/linea e valore angolare accompagnano la rotazione. In caso di endpoint invalido e consentito un breve flash rosso prima della rimozione.
+
+### 7.9 Rotazione e click incrementali
+
+I click incrementali di movimento e rotazione mantengono la semantica precedente: validazione continua e arresto all'ultima posa valida. I drag hanno invece semantica endpoint-only e rollback totale. Lo sgancio editoriale verifica separatamente ogni posa finale candidata.
+
+La soglia click/drag e inizialmente `4 px`. Sotto soglia il rilascio produce il click incrementale; sopra soglia produce la sessione drag.
+
+### 7.10 Degeneri
 
 - normale non finita o quasi nulla: target non valido;
 - nessun hit: target nascosto/non valido;
@@ -261,6 +324,9 @@ Il drag di rotazione calcola l'angolo firmato del pointer attorno al centro proi
 - proiezione tangenziale degenere: fallback deterministico su asse vista alternativo;
 - nessuna posa valida nello sgancio: hold ancora attached e feedback utente;
 - il retro non e classificato: un tentativo intenzionale sul retro e fuori ambito, ma la geometria resta collidente.
+- nessun candidato geometricamente ammissibile durante movimento drag: shadow ferma all'ultimo candidato;
+- endpoint drag invalido: nessun commit e risultato `invalid-endpoint`;
+- pointercancel, lost capture, blur, cambio selezione, rimozione o Escape: risultato `cancelled` e distruzione preview.
 
 ## 8. Movimento e input
 
@@ -268,8 +334,9 @@ Il drag di rotazione calcola l'angolo firmato del pointer attorno al centro proi
 
 - `HoldContextMenu`: popup e stato abilitazione azioni;
 - `WallTargetOverlay`: cerchio, stato giallo/rosso e hint `Escape`;
-- `HoldMoveHandles`: quattro frecce e pressione continua;
+- `HoldMoveHandles`: quattro frecce con click da 1 cm e drag transazionale oltre la soglia di 4 px;
 - `HoldRotationHandles`: frecce circolari e drag;
+- `HoldShadowPreview`: clone Three.js runtime, linea/freccia e arco;
 - `HoldInteractionController`: macchina a stati e coordinamento pointer/OrbitControls.
 
 Gli overlay usano un contenitore con `pointer-events: none`; solo popup e handle interattivi usano `pointer-events: auto`.
@@ -286,6 +353,13 @@ commitAttachTarget
 detachSelected
 moveSelected
 rotateSelected
+beginMoveDrag
+updateMoveDrag
+commitMoveDrag
+beginRotationDrag
+updateRotationDrag
+commitRotationDrag
+cancelTransformDrag
 cancelInteraction
 removeSelected
 onSelectedHoldStateChange
@@ -298,6 +372,11 @@ applied
 blocked
 invalid-target
 not-available
+previewing
+committed
+cancelled
+invalid-endpoint
+surface-limit
 ```
 
 ### 8.3 Pointer Events
@@ -306,12 +385,17 @@ not-available
 - drag con `setPointerCapture`;
 - cleanup su `pointerup`, `pointercancel`, `lostpointercapture`, blur, cambio selezione, rimozione, `Escape`;
 - in targeting il click sinistro non deve avviare OrbitControls;
+- in modalita `moving`, un pointerdown sinistro sulla mesh della hold selezionata puo avviare il drag libero dopo 4 px; non deve cambiare selezione ne orbitare la camera;
 - tasto destro e rotella mantengono navigazione camera;
-- durante drag di un handle OrbitControls viene temporaneamente disabilitato.
+- durante drag di un handle OrbitControls, zoom e pan sono completamente disabilitati;
+- il valore precedente di `controls.enabled` viene memorizzato e ripristinato su ogni uscita;
+- la camera resta immutata per tutta la sessione, cosi coordinate e candidato non cambiano durante il drag.
 
 ### 8.4 Posizionamento popup e gizmo
 
 Usare il bounding box world della hold proiettato nella camera per ottenere il rettangolo CSS. Aggiornare su camera change, resize, selezione e trasformazione. Se il bounding box e interamente dietro la camera o fuori viewport, nascondere popup e gizmo; se e parzialmente visibile, clamp del popup ai bordi della viewport.
+
+La linea/freccia di movimento e l'arco di rotazione possono essere DOM/SVG, ma la shadow deve appartenere a un gruppo Three.js `previewGroup` dedicato. Tale gruppo viene escluso dal raycast di selezione e reso invisibile durante export.
 
 ### 8.5 Scope input
 
@@ -326,6 +410,8 @@ La UX 9UX e desktop mouse. Touch targeting e gesture gizmo non sono implementati
 - mantenere lo sfondo corrente della scena;
 - export JPG con lato lungo 2560 px, lato corto proporzionale, qualita 0.90;
 - non modificare lo stato della camera o della scena interattiva.
+- nascondere `previewGroup` e tutti gli indicatori drag prima del render temporaneo e ripristinarli nel `finally`;
+- disabilitare il comando `Genera immagine` durante una sessione drag attiva; non annullare automaticamente il drag per avviare l'export.
 
 ## 10. Error handling e logging
 

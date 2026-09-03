@@ -105,3 +105,97 @@ Decisione:
 - il retro non viene classificato semanticamente;
 - un tentativo intenzionale di aggancio sul retro e fuori ambito;
 - il retro resta parte del TriMesh e quindi ostacolo fisico nei flussi ordinari.
+
+## DEC-011 - Reimplementazione 9UX-bis
+
+Stato: CHIUSA.
+
+Decisione:
+- il drag-and-drop e una revisione della stessa FASE 9UX, non una nuova fase;
+- il report `Phase_9UX_implementation_done.md` resta storico e non viene eliminato;
+- la nuova implementazione produce `phases-outcome/Phase_9UX-bis_implementation_done.md`.
+
+## DEC-012 - Shadow runtime
+
+Stato: CHIUSA.
+
+Decisione:
+- la preview usa un clone grafico 3D creato a runtime dalla hold selezionata;
+- geometrie e texture vengono condivise; sono creati solo materiali preview trasparenti;
+- nessun PNG, GLB o asset aggiuntivo e richiesto;
+- la shadow non possiede collider o rigid body, non e selezionabile ed e esclusa dall'export.
+
+## DEC-013 - Semantica drag endpoint-only
+
+Stato: CHIUSA.
+
+Decisione:
+- durante il drag la hold reale e il collider restano invariati;
+- nessuna collision query viene eseguita durante pointermove;
+- al pointerup viene validata soltanto la posa endpoint;
+- il percorso puo attraversare ostacoli e non viene considerato;
+- endpoint valido: commit atomico;
+- endpoint invalido: rollback totale, nessun prefisso parziale.
+
+## DEC-014 - Movimento drag aderente
+
+Stato: CHIUSA.
+
+Decisione:
+- il drag parte da una delle quattro frecce e resta vincolato alla relativa direzione screen-space;
+- la shadow viene raycastata e mantenuta aderente alla parete durante tutta la preview;
+- surface lock a 5 gradi rispetto alla normale di aggancio applicato durante la costruzione geometrica;
+- la shadow si arresta all'ultimo candidato geometricamente ammissibile;
+- traiettoria indicata da linea/freccia retta;
+- nessun limite massimo alla distanza richiesta.
+
+## DEC-015 - Click e camera durante drag
+
+Stato: CHIUSA.
+
+Decisione:
+- le stesse frecce conservano il click singolo da 1 cm e diventano origine del drag;
+- le frecce circolari conservano il click singolo da 1 grado e diventano origine del drag;
+- soglia iniziale click/drag `4 px`;
+- durante il drag OrbitControls, zoom e pan sono completamente congelati;
+- `Escape`, pointercancel, lost capture, blur, cambio selezione e rimozione annullano senza commit;
+- preview composta da shadow piu linea/freccia per movimento e shadow piu arco/linea per rotazione.
+
+## DEC-016 - Export durante drag
+
+Stato: CHIUSA.
+
+Decisione:
+- `Genera immagine` e disabilitato mentre una sessione drag e attiva;
+- l'export non annulla automaticamente il drag;
+- dopo commit o cancel il comando viene riabilitato;
+- il `previewGroup` resta comunque escluso dall'export come protezione aggiuntiva.
+
+## DEC-017 - Drag libero dalla presa
+
+Stato: CHIUSA.
+
+Decisione:
+- il drag diretto sulla hold e disponibile soltanto dopo aver attivato `Sposta`;
+- il click ordinario continua a selezionare la hold;
+- il drag dalla hold e libero in due dimensioni screen-space e conserva l'offset pointer-contact point;
+- il drag dalle frecce resta vincolato alla rispettiva direzione;
+- click singoli sulle frecce restano micro-spostamenti da 1 cm.
+
+## DEC-018 - Target orientato
+
+Stato: CHIUSA.
+
+Decisione:
+- il target visualizza la proiezione prospettica di un disco tangente alla superficie;
+- l'ellisse risultante comunica inclinazione e orientamento locale rispetto alla camera;
+- il calcolo usa proiezioni Three.js e non introduce query fisiche aggiuntive.
+
+## DEC-019 - Verso drag rotazione
+
+Stato: CHIUSA.
+
+Decisione:
+- il segno del drag deve fare seguire al punto della hold piu vicino alla freccia selezionata il movimento del mouse;
+- la convenzione tiene conto dell'asse Y dello schermo orientato verso il basso;
+- il comportamento click da 1 grado resta invariato.

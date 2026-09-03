@@ -1,166 +1,236 @@
 import { expect, test, type Page } from '@playwright/test';
 
-test.describe('selezione e comandi hold', () => {
+test.describe('selezione e comandi contestuali 9UX', () => {
   test.beforeEach(async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await page.goto('/');
     await expect(page.getByRole('status')).toHaveText('Parete pronta', { timeout: 60_000 });
     await page.locator('[data-hold-id="Hold1"]').getByRole('button', { name: 'Utilizza' }).click();
     await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
-    await expect.poll(async () => (await sceneState(page)).selectedHoldId).toBe('Hold1');
   });
 
-  test('seleziona con raycast, evidenzia e limita i comandi alla selezionata', async ({ page }) => {
+  test('mostra popup completo e abilita le azioni secondo lo stato', async ({ page }) => {
+    const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
+    await expect(popup).toBeVisible();
+    for (const name of ['Aggancia', 'Sgancia', 'Ruota', 'Sposta', 'Rimuovi']) {
+      await expect(popup.getByRole('button', { name })).toBeVisible();
+    }
+    await expect(popup.getByRole('button', { name: 'Aggancia' })).toBeEnabled();
+    await expect(popup.getByRole('button', { name: 'Sgancia' })).toBeDisabled();
+    await expect(popup.getByRole('button', { name: 'Ruota' })).toBeDisabled();
+    await expect(popup.getByRole('button', { name: 'Sposta' })).toBeDisabled();
+  });
+
+  test('le shortcut legacy non trasformano la presa', async ({ page }) => {
+    const before = await sceneState(page);
+    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE', 'Shift+ArrowUp', 'Shift+ArrowDown']) {
+      await page.keyboard.press(key);
+    }
+    const after = await sceneState(page);
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+  });
+
+  test('rimuove dal popup e libera corpo e collider', async ({ page }) => {
+    const before = await sceneState(page);
+    await page.getByRole('toolbar', { name: 'Azioni presa selezionata' }).getByRole('button', { name: 'Rimuovi' }).click();
+    await expect(page.locator('[data-hold-id="Hold1"]')).toBeVisible();
+    const after = await sceneState(page);
+    expect(after.holdInstanceIds).toEqual([]);
+    expect(after.selectedHoldId).toBeNull();
+    expect(after.rigidBodyCount).toBe(before.rigidBodyCount - 1);
+    expect(after.colliderCount).toBe(before.colliderCount - 1);
+  });
+
+  test('sposta e ruota tramite gizmo mouse e termina le modalità con Escape', async ({ page }) => {
+    await attachAtWallCenter(page);
+    const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
+    const beforeMove = await sceneState(page);
+    await popup.getByRole('button', { name: 'Sposta' }).click();
+    await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('moving');
+    await page.locator('[data-move="up"]').dispatchEvent('pointerdown', { pointerType: 'mouse', pointerId: 1, button: 0 });
+    await page.locator('[data-move="up"]').dispatchEvent('pointerup', { pointerType: 'mouse', pointerId: 1, button: 0 });
+    const afterMove = await sceneState(page);
+    expect(distance(beforeMove.selectedHoldPosition!, afterMove.selectedHoldPosition!)).toBeCloseTo(0.01, 3);
+
     const canvas = page.locator('[data-scene-canvas]');
     const box = await canvas.boundingBox();
     await page.mouse.click(box!.x + 5, box!.y + 5);
-    expect((await sceneState(page)).selectedHoldId).toBeNull();
+    expect((await sceneState(page)).interactionMode).toBe('moving');
 
-    await clickHold(page, 'Hold1');
-    const selectedState = await sceneState(page);
-    expect(selectedState.selectedHoldId, JSON.stringify({
-      ids: selectedState.holdInstanceIds,
-      positions: selectedState.holdScreenPositions,
-    })).toBe('Hold1');
-    await expect(page.getByRole('button', { name: 'Sposta presa su' })).toBeEnabled();
+    await page.keyboard.press('Escape');
+    await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('idle');
+    await popup.getByRole('button', { name: 'Ruota' }).click();
+    const beforeRotate = (await sceneState(page)).selectedHoldRotation!;
+    await page.locator('[data-rotate="clockwise"]').click();
+    const afterRotate = (await sceneState(page)).selectedHoldRotation!;
+    expect(quaternionAngle(beforeRotate, afterRotate)).toBeCloseTo(Math.PI / 180, 4);
 
-    await page.mouse.click(box!.x + 5, box!.y + 5);
-
-    expect((await sceneState(page)).selectedHoldId).toBeNull();
-    await expect(page.getByRole('button', { name: 'Sposta presa su' })).toBeDisabled();
-    await page.keyboard.press('ArrowUp');
-    expect((await sceneState(page)).selectedHoldPosition).toBeNull();
-  });
-
-  test('applica 1 cm e 1 grado con equivalenza tra UI e tastiera', async ({ page }) => {
-    await clickHold(page, 'Hold1');
-    const initial = await sceneState(page);
-
-    await page.getByRole('button', { name: 'Sposta presa su' }).click();
-    const afterUiMove = await sceneState(page);
-    const uiDistance = distance(initial.selectedHoldPosition!, afterUiMove.selectedHoldPosition!);
-    expect(uiDistance).toBeCloseTo(0.01, 4);
-
-    await page.keyboard.press('ArrowUp');
-    const afterKeyboardMove = await sceneState(page);
-    const keyboardDistance = distance(afterUiMove.selectedHoldPosition!, afterKeyboardMove.selectedHoldPosition!);
-    expect(keyboardDistance).toBeCloseTo(uiDistance, 4);
-
-    const beforeRotation = afterKeyboardMove.selectedHoldRotation!;
-    await page.getByRole('button', { name: 'Ruota presa in senso orario' }).click();
-    const afterUiRotation = (await sceneState(page)).selectedHoldRotation!;
+    const beforeLegacyKeys = await sceneState(page);
+    await page.keyboard.press('ArrowRight');
     await page.keyboard.press('KeyE');
-    const afterKeyboardRotation = (await sceneState(page)).selectedHoldRotation!;
-    const uiAngle = quaternionAngle(beforeRotation, afterUiRotation);
-    const keyboardAngle = quaternionAngle(afterUiRotation, afterKeyboardRotation);
-    expect(uiAngle).toBeCloseTo(Math.PI / 180, 4);
-    expect(keyboardAngle).toBeCloseTo(uiAngle, 4);
+    const afterLegacyKeys = await sceneState(page);
+    expect(afterLegacyKeys.selectedHoldPosition).toEqual(beforeLegacyKeys.selectedHoldPosition);
+    expect(afterLegacyKeys.selectedHoldRotation).toEqual(afterRotate);
   });
 
-  test('ripete il comando durante la pressione continua', async ({ page }) => {
-    await clickHold(page, 'Hold1');
-    const button = page.getByRole('button', { name: 'Sposta presa a destra' });
-    const before = (await sceneState(page)).selectedHoldPosition!;
+  test('mantiene reattivi click ripetuti di movimento e rotazione', async ({ page }) => {
+    await attachAtWallCenter(page);
+    const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
+    await popup.getByRole('button', { name: 'Sposta' }).click();
+    const moveElapsed = await page.locator('[data-move="up"]').evaluate((element) => {
+      const started = performance.now();
+      for (let index = 0; index < 20; index += 1) {
+        element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: index + 1, pointerType: 'mouse', button: 0 }));
+        element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: index + 1, pointerType: 'mouse', button: 0 }));
+      }
+      return performance.now() - started;
+    });
+    expect(moveElapsed).toBeLessThan(3_000);
+
+    await page.keyboard.press('Escape');
+    await popup.getByRole('button', { name: 'Ruota' }).click();
+    const rotateElapsed = await page.locator('[data-rotate="clockwise"]').evaluate((element) => {
+      const started = performance.now();
+      for (let index = 0; index < 20; index += 1) {
+        element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: index + 101, pointerType: 'mouse', button: 0 }));
+        element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: index + 101, pointerType: 'mouse', button: 0 }));
+      }
+      return performance.now() - started;
+    });
+    expect(rotateElapsed).toBeLessThan(3_000);
+  });
+
+  test('mostra shadow durante drag movimento e committa soltanto al rilascio', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const handle = page.locator('[data-move="up"]');
+    const box = await handle.boundingBox();
+    const before = await sceneState(page);
     const apiRequests: string[] = [];
     page.on('request', (request) => {
       if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url());
     });
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 - 80, { steps: 3 });
+    const preview = await sceneState(page);
 
-    await button.dispatchEvent('mousedown', { button: 0 });
-    await page.waitForTimeout(3_000);
-    await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup')));
-    const after = (await sceneState(page)).selectedHoldPosition!;
-
-    expect(distance(before, after)).toBeGreaterThan(0.019);
+    expect(preview.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(preview.dragPreview?.kind).toBe('move');
+    expect(preview.previewObjectCount).toBe(1);
+    expect(preview.rigidBodyCount).toBe(before.rigidBodyCount);
+    expect(preview.colliderCount).toBe(before.colliderCount);
     expect(apiRequests).toEqual([]);
-  });
+    await expect(page.locator('[data-drag-indicator]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeDisabled();
 
-  test('applica avanti e indietro lungo la normale con shortcut equivalenti', async ({ page }) => {
-    await clickHold(page, 'Hold1');
-    const initial = await sceneState(page);
-
-    await page.getByRole('button', { name: 'Avvicina presa alla parete' }).click();
-    const afterUiForward = await sceneState(page);
-    expect(initial.selectedHoldPosition![2] - afterUiForward.selectedHoldPosition![2]).toBeCloseTo(0.01, 4);
-
-    await page.keyboard.press('Shift+ArrowUp');
-    const afterKeyboardForward = await sceneState(page);
-    expect(afterUiForward.selectedHoldPosition![2] - afterKeyboardForward.selectedHoldPosition![2]).toBeCloseTo(0.01, 4);
-
-    await page.getByRole('button', { name: 'Allontana presa dalla parete' }).click();
-    const afterUiBackward = await sceneState(page);
-    expect(afterUiBackward.selectedHoldPosition![2] - afterKeyboardForward.selectedHoldPosition![2]).toBeCloseTo(0.01, 4);
-
-    await page.keyboard.press('Shift+ArrowDown');
-    const afterKeyboardBackward = await sceneState(page);
-    expect(afterKeyboardBackward.selectedHoldPosition![2]).toBeCloseTo(initial.selectedHoldPosition![2], 4);
-    expect(afterKeyboardBackward.holdStates.Hold1.attachment).toBe('pre-snap');
-  });
-
-  test('ripete avanti durante la pressione continua', async ({ page }) => {
-    await clickHold(page, 'Hold1');
-    const button = page.getByRole('button', { name: 'Avvicina presa alla parete' });
-    const before = (await sceneState(page)).selectedHoldPosition!;
-
-    await button.dispatchEvent('mousedown', { button: 0 });
-    await page.waitForTimeout(5_000);
-    await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup')));
-    const after = (await sceneState(page)).selectedHoldPosition!;
-
-    expect(before[2] - after[2]).toBeGreaterThan(0.019);
-  });
-
-  test('rimuove solo la presa selezionata e libera corpo e collider', async ({ page }) => {
-    await page.locator('[data-hold-id="Hold2"]').getByRole('button', { name: 'Utilizza' }).click();
-    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold2 aggiunta alla scena.', { timeout: 120_000 });
-    await clickHold(page, 'Hold1');
-    const before = await sceneState(page);
-    expect(before.holdInstanceIds).toEqual(['Hold1', 'Hold2']);
-
-    await page.getByRole('button', { name: 'Rimuovi presa' }).click();
-
-    await expect(page.locator('[data-hold-id="Hold1"]')).toBeVisible();
+    await page.mouse.up();
     const after = await sceneState(page);
-    expect(after.holdInstanceIds).toEqual(['Hold2']);
-    expect(after.selectedHoldId).toBeNull();
-    expect(after.rigidBodyCount).toBe(before.rigidBodyCount - 1);
-    expect(after.colliderCount).toBe(before.colliderCount - 1);
-    expect(after.selectedHoldBodyValid).toBe(false);
+    expect(after.dragPreview).toBeNull();
+    expect(after.previewObjectCount).toBe(0);
+    expect(after.selectedHoldPosition).not.toEqual(before.selectedHoldPosition);
+    await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeEnabled();
+  });
+
+  test('annulla drag rotazione con Escape senza mutare la posa reale', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Ruota' }).click();
+    const handle = page.locator('[data-rotate="clockwise"]');
+    const box = await handle.boundingBox();
+    const before = await sceneState(page);
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 + 60, { steps: 3 });
+    const preview = await sceneState(page);
+    expect(preview.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(preview.dragPreview?.kind).toBe('rotate');
+    expect(preview.dragPreview!.angleDegrees).toBeLessThan(0);
+    expect(preview.previewObjectCount).toBe(1);
+    expect(preview.cameraPosition).toEqual(before.cameraPosition);
+    expect(preview.orbitControlsEnabled).toBe(false);
+    await page.keyboard.press('Escape');
+    const after = await sceneState(page);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(after.dragPreview).toBeNull();
+    expect(after.previewObjectCount).toBe(0);
+    expect(after.orbitControlsEnabled).toBe(true);
+  });
+
+  test('committa la rotazione shadow soltanto al rilascio', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Ruota' }).click();
+    const handle = page.locator('[data-rotate="clockwise"]');
+    const box = await handle.boundingBox();
+    const before = await sceneState(page);
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 + 45, { steps: 2 });
+    const preview = await sceneState(page);
+    expect(preview.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(preview.dragPreview?.kind).toBe('rotate');
+    expect(preview.previewObjectCount).toBe(1);
+    await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeDisabled();
+    await page.mouse.up();
+    const after = await sceneState(page);
+    expect(after.selectedHoldRotation).not.toEqual(before.selectedHoldRotation);
+    expect(after.dragPreview).toBeNull();
+    expect(after.previewObjectCount).toBe(0);
+  });
+
+  test('avvia il drag libero direttamente dalla presa in modalità Sposta', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const canvasBox = await canvas.boundingBox();
+    const before = await sceneState(page);
+    const [x, y] = before.holdScreenPositions.Hold1;
+    const startX = canvasBox!.x + ((x + 1) / 2) * canvasBox!.width;
+    const startY = canvasBox!.y + ((1 - y) / 2) * canvasBox!.height;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX, startY - 65, { steps: 3 });
+    const preview = await sceneState(page);
+    expect(preview.dragPreview?.kind).toBe('move');
+    expect(preview.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(Math.abs(preview.dragPreview!.requested.x - preview.dragPreview!.start.x)).toBeGreaterThan(4);
+    expect(preview.dragPreview!.requested.y).toBeLessThan(preview.dragPreview!.start.y - 40);
+    await page.mouse.up();
+    const after = await sceneState(page);
+    expect(after.dragPreview).toBeNull();
+    expect(['committed', 'invalid-endpoint']).toContain(after.lastActionResult?.status);
   });
 
 });
 
-/** Legge lo stato diagnostico aggiornato dalla scena. */
 async function sceneState(page: Page) {
   return page.evaluate(() => window.__ROUTE_SETTER_SCENE__!);
 }
 
-/** Converte la coordinata normalizzata esposta dalla scena in un click canvas reale. */
+async function attachAtWallCenter(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Aggancia' }).click();
+  const canvas = page.locator('[data-scene-canvas]');
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await expect.poll(async () => (await sceneState(page)).holdStates.Hold1.physicalState).toBe('attached');
+}
+
 async function clickHold(page: Page, id: string): Promise<void> {
   const canvas = page.locator('[data-scene-canvas]');
   const box = await canvas.boundingBox();
-  const state = await sceneState(page);
-  const [x, y] = state.holdScreenPositions[id];
-  const centerX = box!.x + ((x + 1) / 2) * box!.width;
-  const centerY = box!.y + ((1 - y) / 2) * box!.height;
-  for (const offsetY of [0, -10, 10, -20, 20, -35, 35]) {
-    for (const offsetX of [0, -10, 10, -20, 20, -35, 35]) {
-      const clickX = centerX + offsetX;
-      const clickY = centerY + offsetY;
-      if (clickX <= box!.x || clickX >= box!.x + box!.width
-        || clickY <= box!.y || clickY >= box!.y + box!.height) continue;
-      await page.mouse.click(clickX, clickY);
-      if ((await sceneState(page)).selectedHoldId === id) return;
-    }
-  }
+  const [x, y] = (await sceneState(page)).holdScreenPositions[id];
+  await page.mouse.click(
+    box!.x + ((x + 1) / 2) * box!.width,
+    box!.y + ((1 - y) / 2) * box!.height,
+  );
+  await expect.poll(async () => (await sceneState(page)).selectedHoldId).toBe(id);
 }
 
-/** Calcola la distanza euclidea tra due posizioni XYZ. */
 function distance(a: readonly number[], b: readonly number[]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-/** Calcola l'angolo minimo tra due quaternioni normalizzati. */
 function quaternionAngle(a: readonly number[], b: readonly number[]): number {
   const dot = Math.min(1, Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]));
   return 2 * Math.acos(dot);

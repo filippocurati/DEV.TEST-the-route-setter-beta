@@ -63,6 +63,7 @@ FASE 0 (Setup)
 
 Nota: FASE 1 e FASE 2 possono procedere in parallelo dopo FASE 0, ma entrambe devono essere complete prima delle fasi frontend che dipendono da API/collider.
 Nota: la FASE 9UX parte dalla baseline congelata della FASE 9 e deve essere completata prima della FASE 10.
+Nota: la prima implementazione della FASE 9UX e documentata da `phases-outcome/Phase_9UX_implementation_done.md` e resta storica. Le specifiche correnti richiedono una reimplementazione della stessa FASE 9UX con drag transazionale e shadow runtime. Il nuovo esito deve essere documentato in `phases-outcome/Phase_9UX-bis_implementation_done.md`, senza eliminare o sovrascrivere il report precedente.
 
 ---
 
@@ -437,10 +438,10 @@ Produrre JPG guida conforme alle specifiche.
 
 ---
 
-## FASE 9UX - Interazione contestuale e posizionamento diretto
+## FASE 9UX - Reimplementazione contestuale con drag transazionale
 
 ### Obiettivo
-Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indietro e snap automatico con popup contestuale, targeting diretto, gizmo mouse e blocco al cambio di superficie.
+Conservare popup contestuale e targeting diretto, sostituendo il drag incrementale con preview shadow 3D runtime, nessuna validazione durante pointermove e commit endpoint-only al rilascio.
 
 ### Requisiti SDD coperti
 - `REQ-SCN-002`, `REQ-SCN-003`, `REQ-SCN-005`
@@ -460,7 +461,18 @@ Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indie
 - posa finale di aggancio verificata con Convex Hull;
 - sgancio da 0.50 m con incremento 0.10 m fino a 10 m;
 - rotazione mouse quantizzata a 1 grado;
-- movimento mouse di 1 cm con pressione continua;
+- click movimento da 1 cm conservato, ma pressione con trascinamento avvia drag transazionale e non ripetizione continua;
+- click rotazione da 1 grado conservato, drag transazionale con shadow e arco;
+- hold reale e collider invariati durante drag;
+- shadow runtime aderente alla parete durante movimento;
+- nessuna collision query durante pointermove;
+- validazione esclusiva dell'endpoint al rilascio;
+- endpoint invalido annulla integralmente senza commit parziale;
+- linea retta origine-target e nessun limite massimo di drag;
+- camera completamente congelata durante drag;
+- drag libero dalla mesh della hold disponibile solo in modalita `Sposta`;
+- target di aggancio reso come ellisse prospettica tangente alla parete;
+- verso del drag rotazione coerente col movimento del mouse;
 - confronto della normale corrente con la normale di aggancio, tolleranza 5 gradi;
 - blocco su cambio di superficie, diedro, spigolo o prominenza oltre soglia;
 - parete interamente collidente, retro non classificato;
@@ -476,13 +488,19 @@ Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indie
 5. Implementare campionamento a 37 punti, clustering e tie-break superficie dominante.
 6. Implementare commit diretto e validazione posa finale.
 7. Implementare sgancio progressivo senza fallback allo spawn.
-8. Implementare `HoldRotationHandles` con pointer capture e quantizzazione.
-9. Implementare `HoldMoveHandles` con pressione continua e surface lock a 5 gradi.
-10. Rimuovere pannello fisso, `Rimuovi` dalla topbar, listener e hint delle shortcut legacy.
-11. Coordinare OrbitControls con targeting e drag.
-12. Escludere popup, target, hint e gizmo dall'export.
-13. Aggiornare feedback utente e cleanup di timer/pointer/modalita.
-14. Riscrivere unit test ed E2E legacy interessati.
+8. Reimplementare `HoldRotationHandles` distinguendo click e drag transazionale.
+9. Reimplementare `HoldMoveHandles` distinguendo click da 1 cm e drag lungo la direzione della freccia.
+10. Implementare `HoldShadowPreview` runtime con materiali trasparenti, linea/freccia e arco.
+11. Implementare API begin/update/commit/cancel per le sessioni drag.
+12. Garantire zero mutazioni hold/collider e zero collision query durante pointermove.
+13. Implementare endpoint-only validation e rollback totale al pointerup.
+14. Coordinare OrbitControls congelando completamente la camera durante drag.
+15. Escludere shadow e indicatori dall'export e dal picking.
+16. Aggiornare feedback e cleanup di materiali, pointer e modalita.
+17. Riscrivere unit test ed E2E interessati.
+18. Aggiungere drag libero dalla mesh selezionata mantenendo drag vincolato dalle frecce.
+19. Proiettare il disco target sulla tangente locale come ellisse orientata.
+20. Invertire la convenzione del delta rotazione per seguire il mouse in coordinate CSS.
 
 ### Test da eseguire
 - popup visibile e ancorato dopo selezione;
@@ -495,8 +513,31 @@ Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indie
 - aggancio diretto su superficie frontale, inclinata e laterale;
 - collisione finale parete/hold rifiutata;
 - sgancio a 0.50 m, fallback progressivo 0.10 m e fallimento a 10 m;
-- click/drag rotazione a 1 grado e blocco collisione;
-- click/hold movimento a 1 cm e stop su release/cancel;
+- click rotazione a 1 grado e click movimento a 1 cm invariati;
+- shadow visibile durante drag mentre la hold reale resta immutata;
+- shadow movimento aderente alla parete e bloccata al surface limit;
+- linea/freccia movimento e arco rotazione coerenti col target;
+- nessuna collision query durante pointermove;
+- release endpoint valido produce un solo commit;
+- release endpoint invalido produce rollback totale;
+- endpoint libero oltre un ostacolo intermedio e accettato, coerentemente con endpoint-only;
+- pointercancel, lost capture, blur, cambio selezione, rimozione ed Escape annullano senza commit;
+- camera completamente congelata e ripristinata durante drag;
+- shadow, linea e arco esclusi dal JPG;
+- nessuna perdita di materiali/listener dopo drag ripetuti;
+- nessuna richiesta di rete per asset shadow e condivisione di geometrie/texture verificata;
+- shadow priva di rigid body, collider e identificatore di picking;
+- hold reale, collider, contact point, normale e twist immutati durante pointermove;
+- esattamente una fase applicativa di validazione endpoint al pointerup;
+- drag senza limite totale della distanza richiesta;
+- drag libero dalla hold attivo solo in `moving`, con offset pointer-contact point preservato;
+- drag diretto sulla hold non cambia selezione e non muove la camera;
+- target ellittico orientato coerentemente con una superficie frontale e una inclinata;
+- verso della shadow rotazione coerente col lato della freccia trascinata;
+- comando export disabilitato durante drag e nuovamente disponibile dopo commit/cancel;
+- preview aggiornata al massimo una volta per frame, con misurazione percentile 95;
+- nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove;
+- latenza endpoint tipica <= 50 ms, caso complesso <= 100 ms, nessun long task > 200 ms;
 - superficie curva entro 5 gradi seguita senza distacco;
 - cambio oltre 5 gradi bloccato senza transizione;
 - nessuna vecchia shortcut modifica la hold;
@@ -514,7 +555,7 @@ Sostituire l'operativita legacy basata su pannello fisso, tastiera, avanti/indie
 - nessuna transizione automatica fra inclinazioni oltre soglia;
 - timer, pointer capture e modalita sempre rilasciati;
 - suite frontend e backend completa verde;
-- report `phases-outcome/Phase_9UX_implementation_done.md` con evidenze e limiti.
+- report `phases-outcome/Phase_9UX-bis_implementation_done.md` con evidenze e limiti, mantenendo il report 9UX precedente.
 
 ---
 

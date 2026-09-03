@@ -6,6 +6,7 @@ test('genera un JPG ad alta risoluzione e ripristina scena e UI', async ({ page 
   await expect(page.getByRole('status')).toHaveText('Parete pronta', { timeout: 60_000 });
   await page.locator('[data-hold-id="Hold1"]').getByRole('button', { name: 'Utilizza' }).click();
   await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
+  await expect(page.getByRole('toolbar', { name: 'Azioni presa selezionata' })).toBeVisible();
   const canvas = page.locator('[data-scene-canvas]');
   const viewport = await canvas.boundingBox();
   await page.mouse.move(viewport!.x + viewport!.width * 0.5, viewport!.y + viewport!.height * 0.5);
@@ -44,6 +45,7 @@ test('genera un JPG ad alta risoluzione e ripristina scena e UI', async ({ page 
   await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Catalogo prese' })).toBeVisible();
   await expect(page.locator('[data-scene-canvas]')).toBeVisible();
+  await expect(page.getByRole('toolbar', { name: 'Azioni presa selezionata' })).toBeVisible();
   const after = await page.evaluate(() => window.__ROUTE_SETTER_SCENE__);
   expect(after?.cameraPosition).toEqual(before?.cameraPosition);
   expect(after?.cameraQuaternion).toEqual(before?.cameraQuaternion);

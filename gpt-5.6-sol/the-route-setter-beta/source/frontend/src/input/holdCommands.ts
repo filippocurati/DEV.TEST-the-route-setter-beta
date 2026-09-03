@@ -4,40 +4,14 @@ export type HoldCommand =
   | 'move-down'
   | 'move-left'
   | 'move-right'
-  | 'move-forward'
-  | 'move-backward'
   | 'rotate-counterclockwise'
   | 'rotate-clockwise';
 
 export const TRANSLATION_STEP_METERS = 0.01;
 export const ROTATION_STEP_RADIANS = Math.PI / 180;
 
-const keyboardCommands: Readonly<Record<string, HoldCommand>> = {
-  ArrowUp: 'move-up',
-  ArrowDown: 'move-down',
-  ArrowLeft: 'move-left',
-  ArrowRight: 'move-right',
-  KeyQ: 'rotate-counterclockwise',
-  KeyE: 'rotate-clockwise',
-};
-
-/** Restituisce il comando associato a uno shortcut fisico di tastiera. */
-export function commandForKeyboardCode(code: string, shiftKey = false): HoldCommand | undefined {
-  if (shiftKey && code === 'ArrowUp') return 'move-forward';
-  if (shiftKey && code === 'ArrowDown') return 'move-backward';
-  return keyboardCommands[code];
-}
-
-/** Indica se l'evento proviene da un controllo in cui le shortcut non devono intervenire. */
-export function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement
-    || target instanceof HTMLTextAreaElement
-    || target instanceof HTMLSelectElement
-    || (target instanceof HTMLElement && target.isContentEditable);
-}
-
 /**
- * Gestisce click singolo e ripetizione continua per pulsanti e tastiera usando lo stesso callback.
+ * Gestisce click singolo e ripetizione continua per gli handle pointer.
  * La prima ripetizione parte dopo un breve ritardo per non duplicare il click singolo.
  */
 export class ContinuousCommandController {

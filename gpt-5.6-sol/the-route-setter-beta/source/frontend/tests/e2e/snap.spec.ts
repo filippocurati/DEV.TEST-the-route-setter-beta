@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-test.describe('snap e post-snap', () => {
+test.describe('aggancio contestuale 9UX', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/');
@@ -9,66 +9,127 @@ test.describe('snap e post-snap', () => {
     await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold1 aggiunta alla scena.', { timeout: 120_000 });
   });
 
-  test('non esegue snap oltre 5 cm e aggancia entrando nella soglia', async ({ page }) => {
-    const initial = await state(page);
-    expect(initial.holdStates.Hold1.attachment).toBe('pre-snap');
-    expect(initial.selectedHoldPosition![2] - initial.wallFrontReference[2]).toBeCloseTo(2, 4);
-
-    await page.getByRole('button', { name: 'Avvicina presa alla parete' }).click();
-    const afterSingleStep = await state(page);
-    expect(afterSingleStep.holdStates.Hold1.attachment).toBe('pre-snap');
-    expect(initial.selectedHoldPosition![2] - afterSingleStep.selectedHoldPosition![2]).toBeCloseTo(0.01, 4);
-
-    await holdUntilAttached(page);
-
-    const snapped = await state(page);
-    expect(snapped.holdStates.Hold1.attachment).toBe('post-snap');
-    expect(snapped.holdStates.Hold1.contactPoint).not.toBeNull();
-    expect(distance(snapped.selectedHoldPosition!, snapped.holdStates.Hold1.contactPoint!)).toBeLessThan(1e-4);
+  test('aggancia direttamente al target e riapre il popup attached', async ({ page }) => {
+    const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
+    await expect(popup.getByRole('button', { name: 'Aggancia' })).toBeEnabled();
+    await expect(popup.getByRole('button', { name: 'Sgancia' })).toBeDisabled();
+    await attachAtWallCenter(page);
+    const state = await sceneState(page);
+    expect(state.holdStates.Hold1.physicalState).toBe('attached');
+    expect(state.holdStates.Hold1.contactPoint).not.toBeNull();
+    await expect(popup).toBeVisible();
+    await expect(popup.getByRole('button', { name: 'Sgancia' })).toBeEnabled();
   });
 
-  test('mantiene movimento tangenziale, rotazione normale e sgancio controllato', async ({ page }) => {
-    const initialRotation = (await state(page)).selectedHoldRotation!;
-    await holdUntilAttached(page);
-    const snapped = await state(page);
+  test('annulla il targeting con Escape mantenendo selezione e posa', async ({ page }) => {
+    const before = await sceneState(page);
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('attach-targeting');
+    await page.keyboard.press('Escape');
+    const after = await sceneState(page);
+    expect(after.interactionMode).toBe('idle');
+    expect(after.selectedHoldId).toBe('Hold1');
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+  });
 
-    await page.getByRole('button', { name: 'Avvicina presa alla parete' }).click();
-    const afterNoOp = await state(page);
-    expect(distance(snapped.selectedHoldPosition!, afterNoOp.selectedHoldPosition!)).toBeLessThan(1e-6);
+  test('sgancia cercando una posa valida da cinquanta centimetri', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Ruota' }).click();
+    await page.locator('[data-rotate="clockwise"]').click();
+    const attached = await sceneState(page);
+    await page.getByRole('button', { name: 'Sgancia' }).click();
+    const detached = await sceneState(page);
+    expect(detached.holdStates.Hold1.physicalState).toBe('detached');
+    expect(detached.holdStates.Hold1.contactPoint).toBeNull();
+    expect(distance(detached.selectedHoldPosition!, attached.selectedHoldPosition!)).toBeGreaterThanOrEqual(0.49);
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const box = await canvas.boundingBox();
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    const reattached = await sceneState(page);
+    expect(quaternionAngle(attached.selectedHoldRotation!, reattached.selectedHoldRotation!)).toBeGreaterThan(0.01);
+  });
 
-    await page.getByRole('button', { name: 'Sposta presa su' }).click();
-    const afterTangent = await state(page);
-    expect(distance(afterNoOp.selectedHoldPosition!, afterTangent.selectedHoldPosition!)).toBeCloseTo(0.01, 3);
-    expect(afterTangent.holdStates.Hold1.attachment).toBe('post-snap');
+  test('mantiene il targeting e mostra rosso quando la posa collide con un’altra presa', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.locator('[data-hold-id="Hold2"]').getByRole('button', { name: 'Utilizza' }).click();
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    const before = await sceneState(page);
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    const after = await sceneState(page);
 
-    await page.getByRole('button', { name: 'Ruota presa in senso orario' }).click();
-    const afterRotation = await state(page);
-    expect(quaternionAngle(afterTangent.selectedHoldRotation!, afterRotation.selectedHoldRotation!)).toBeCloseTo(Math.PI / 180, 4);
+    expect(after.interactionMode).toBe('attach-targeting');
+    expect(after.holdStates.Hold2.physicalState).toBe('detached');
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.lastActionResult?.status).toBe('invalid-target');
+  });
 
-    await page.getByRole('button', { name: 'Allontana presa dalla parete' }).click();
-    const detached = await state(page);
-    expect(detached.holdStates.Hold1.attachment).toBe('pre-snap');
-    expect(quaternionAngle(initialRotation, detached.selectedHoldRotation!)).toBeLessThan(1e-5);
-    expect(distance(detached.selectedHoldPosition!, afterRotation.holdStates.Hold1.contactPoint!)).toBeCloseTo(0.25, 3);
+  test('riserva il drag sinistro al targeting e mantiene lo zoom della camera', async ({ page }) => {
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const box = await canvas.boundingBox();
+    const before = await sceneState(page);
+    await page.mouse.move(box!.x + box!.width * 0.4, box!.y + box!.height * 0.4);
+    await page.mouse.down({ button: 'left' });
+    await page.mouse.move(box!.x + box!.width * 0.6, box!.y + box!.height * 0.55);
+    await page.mouse.up({ button: 'left' });
+    const afterLeftDrag = await sceneState(page);
+    expect(afterLeftDrag.cameraPosition).toEqual(before.cameraPosition);
+    expect(afterLeftDrag.holdStates.Hold1.physicalState).toBe('detached');
+
+    await page.mouse.wheel(0, -300);
+    await expect.poll(async () => (await sceneState(page)).cameraPosition).not.toEqual(before.cameraPosition);
+  });
+
+  test('orienta il target secondo la superficie inclinata', async ({ page }) => {
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const box = await canvas.boundingBox();
+    const target = page.locator('[data-wall-target]');
+    let found = false;
+    for (const x of [0.15, 0.22, 0.3, 0.38]) {
+      for (const y of [0.3, 0.4, 0.5, 0.6, 0.7]) {
+        await page.mouse.move(box!.x + box!.width * x, box!.y + box!.height * y);
+        if (await target.isVisible()) {
+          const dimensions = await target.evaluate((element) => ({
+            width: Number.parseFloat(getComputedStyle(element).width),
+            height: Number.parseFloat(getComputedStyle(element).height),
+          }));
+          if (dimensions.height < dimensions.width * 0.99) {
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+    expect(found).toBe(true);
+    const style = await target.evaluate((element) => ({
+      width: Number.parseFloat(getComputedStyle(element).width),
+      height: Number.parseFloat(getComputedStyle(element).height),
+      rotate: getComputedStyle(element).rotate,
+    }));
+    expect(style.width).toBeGreaterThan(0);
+    expect(style.height).toBeGreaterThan(0);
+    expect(style.height).toBeLessThanOrEqual(style.width);
+    expect(style.rotate).not.toBe('none');
   });
 });
 
-/** Invia passi UI reali in batch finché la macchina a stati segnala post-snap. */
-async function holdUntilAttached(page: Page): Promise<void> {
-  const button = page.getByRole('button', { name: 'Avvicina presa alla parete' });
-  await button.evaluate((element) => {
-    for (let index = 0; index < 210; index += 1) {
-      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
-      window.dispatchEvent(new MouseEvent('mouseup'));
-      if (window.__ROUTE_SETTER_SCENE__?.holdStates.Hold1.attachment === 'post-snap') break;
-    }
-  });
-  await expect.poll(async () => (await state(page)).holdStates.Hold1.attachment, {
-    timeout: 60_000,
-  }).toBe('post-snap');
+async function attachAtWallCenter(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Aggancia' }).click();
+  const canvas = page.locator('[data-scene-canvas]');
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await expect(page.getByRole('img', { name: 'Target di aggancio' })).toBeVisible();
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await expect.poll(async () => (await sceneState(page)).holdStates.Hold1.physicalState).toBe('attached');
 }
 
-async function state(page: Page) {
+async function sceneState(page: Page) {
   return page.evaluate(() => window.__ROUTE_SETTER_SCENE__!);
 }
 

@@ -158,6 +158,34 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('valida le pose 9UX contro parete e altre hold', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0, 0, 1),
+      new Quaternion(),
+    );
+    physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0.5, 0, 0.2),
+      new Quaternion(),
+    );
+
+    expect(physics.validatePose(moving, { x: 0, y: 0, z: 0.05 }, new Quaternion())).toEqual({
+      valid: false,
+      blocker: 'wall',
+    });
+    expect(physics.validatePose(moving, { x: 0.5, y: 0, z: 0.2 }, new Quaternion())).toEqual({
+      valid: false,
+      blocker: 'hold',
+    });
+    expect(physics.validatePose(moving, { x: -0.5, y: 0, z: 0.2 }, new Quaternion())).toEqual({
+      valid: true,
+      blocker: null,
+    });
+    physics.dispose();
+  });
+
   it('usa move-and-slide bloccando la parete e mantenendo la componente libera', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
     const object = physics.createKinematicObject(

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  commandForKeyboardCode,
   ContinuousCommandController,
   ROTATION_STEP_RADIANS,
   TRANSLATION_STEP_METERS,
@@ -11,30 +10,9 @@ describe('comandi hold', () => {
     vi.useRealTimers();
   });
 
-  it('definisce passi esatti e shortcut coerenti', () => {
+  it('definisce passi esatti per gli handle mouse', () => {
     expect(TRANSLATION_STEP_METERS).toBe(0.01);
     expect(ROTATION_STEP_RADIANS).toBeCloseTo(Math.PI / 180);
-    expect(commandForKeyboardCode('ArrowUp')).toBe('move-up');
-    expect(commandForKeyboardCode('ArrowDown')).toBe('move-down');
-    expect(commandForKeyboardCode('ArrowLeft')).toBe('move-left');
-    expect(commandForKeyboardCode('ArrowRight')).toBe('move-right');
-    expect(commandForKeyboardCode('KeyQ')).toBe('rotate-counterclockwise');
-    expect(commandForKeyboardCode('KeyE')).toBe('rotate-clockwise');
-    expect(commandForKeyboardCode('ArrowUp', true)).toBe('move-forward');
-    expect(commandForKeyboardCode('ArrowDown', true)).toBe('move-backward');
-  });
-
-  it('ripete anche avanti e indietro durante la pressione continua', () => {
-    vi.useFakeTimers();
-    const execute = vi.fn();
-    const controller = new ContinuousCommandController();
-
-    controller.start('key:Shift+ArrowUp', 'move-forward', execute);
-    vi.advanceTimersByTime(500);
-    controller.stop('key:Shift+ArrowUp');
-
-    expect(execute.mock.calls.length).toBeGreaterThan(1);
-    expect(execute).toHaveBeenCalledWith('move-forward');
   });
 
   it('applica un solo passo per una pressione breve', () => {
@@ -42,9 +20,9 @@ describe('comandi hold', () => {
     const execute = vi.fn();
     const controller = new ContinuousCommandController();
 
-    controller.start('key:ArrowUp', 'move-up', execute);
+    controller.start('pointer:move-up', 'move-up', execute);
     vi.advanceTimersByTime(200);
-    controller.stop('key:ArrowUp');
+    controller.stop('pointer:move-up');
     vi.advanceTimersByTime(500);
 
     expect(execute).toHaveBeenCalledTimes(1);
@@ -65,13 +43,13 @@ describe('comandi hold', () => {
     expect(execute).toHaveBeenCalledTimes(callsAtRelease);
   });
 
-  it('ignora keydown ripetuti per lo stesso comando attivo', () => {
+  it('ignora pointerdown ripetuti per lo stesso comando attivo', () => {
     vi.useFakeTimers();
     const execute = vi.fn();
     const controller = new ContinuousCommandController();
 
-    controller.start('key:KeyQ', 'rotate-counterclockwise', execute);
-    controller.start('key:KeyQ', 'rotate-counterclockwise', execute);
+    controller.start('pointer:rotate', 'rotate-counterclockwise', execute);
+    controller.start('pointer:rotate', 'rotate-counterclockwise', execute);
 
     expect(execute).toHaveBeenCalledTimes(1);
     controller.stopAll();
