@@ -7,6 +7,7 @@ import type {
 } from './interactionTypes';
 
 export interface HoldOverlayActions {
+  details(): void;
   attach(): SceneActionResult;
   detach(): SceneActionResult;
   moveMode(): SceneActionResult;
@@ -26,11 +27,10 @@ export interface HoldOverlayActions {
   feedback(result: SceneActionResult): void;
 }
 
-/** Overlay DOM unico per popup, target, hint e gizmo della hold selezionata. */
+/** Overlay DOM unico per popup, hint e gizmo della hold selezionata. */
 export class HoldOverlay {
   private readonly root: HTMLDivElement;
   private readonly menu: HTMLDivElement;
-  private readonly target: HTMLDivElement;
   private readonly hint: HTMLParagraphElement;
   private readonly moveHandles: HTMLDivElement;
   private readonly rotationHandles: HTMLDivElement;
@@ -64,13 +64,13 @@ export class HoldOverlay {
     this.root.dataset.holdOverlay = 'true';
     this.root.innerHTML = `
       <div class="hold-context-menu" role="toolbar" aria-label="Azioni presa selezionata" data-context-menu hidden>
+        <button type="button" data-action="details">Dettagli</button>
         <button type="button" data-action="attach">Aggancia</button>
         <button type="button" data-action="detach">Sgancia</button>
         <button type="button" data-action="rotate">Ruota</button>
         <button type="button" data-action="move">Sposta</button>
         <button type="button" data-action="remove" class="danger">Rimuovi</button>
       </div>
-      <div class="wall-target" role="img" aria-label="Target di aggancio" data-wall-target hidden></div>
       <div class="move-handles" data-move-handles hidden>
         <span data-move="up" aria-hidden="true">↑</span>
         <span data-move="left" aria-hidden="true">←</span>
@@ -86,7 +86,6 @@ export class HoldOverlay {
     `;
     container.append(this.root);
     this.menu = required<HTMLDivElement>(this.root, '[data-context-menu]');
-    this.target = required<HTMLDivElement>(this.root, '[data-wall-target]');
     this.hint = required<HTMLParagraphElement>(this.root, '[data-interaction-hint]');
     this.moveHandles = required<HTMLDivElement>(this.root, '[data-move-handles]');
     this.rotationHandles = required<HTMLDivElement>(this.root, '[data-rotation-handles]');
@@ -117,16 +116,6 @@ export class HoldOverlay {
       this.buttons.get('rotate')!.disabled = detached;
       this.positionHandles(snapshot);
     }
-    this.target.hidden = !snapshot.target?.visible || snapshot.exporting;
-    if (snapshot.target?.visible) {
-      this.target.style.left = `${snapshot.target.center.x}px`;
-      this.target.style.top = `${snapshot.target.center.y}px`;
-      this.target.style.width = `${snapshot.target.diameterPx}px`;
-      this.target.style.height = `${snapshot.target.diameterPx * snapshot.target.minorAxisRatio}px`;
-      this.target.style.rotate = `${snapshot.target.rotationRadians}rad`;
-      this.target.dataset.state = snapshot.target.feedback;
-      this.target.ariaLabel = snapshot.target.feedback === 'invalid' ? 'Target di aggancio non valido' : 'Target di aggancio';
-    }
     this.hint.hidden = snapshot.mode === 'idle' || snapshot.exporting;
     this.moveHandles.hidden = snapshot.mode !== 'moving' || !selected?.screenBounds.visible || snapshot.exporting;
     this.rotationHandles.hidden = snapshot.mode !== 'rotating' || !selected?.screenBounds.visible || snapshot.exporting;
@@ -142,6 +131,7 @@ export class HoldOverlay {
   }
 
   private bindMenu(): void {
+    this.buttons.get('details')!.addEventListener('click', () => this.actions.details());
     this.buttons.get('attach')!.addEventListener('click', () => this.report(this.actions.attach()));
     this.buttons.get('detach')!.addEventListener('click', () => this.report(this.actions.detach()));
     this.buttons.get('move')!.addEventListener('click', () => this.report(this.actions.moveMode()));

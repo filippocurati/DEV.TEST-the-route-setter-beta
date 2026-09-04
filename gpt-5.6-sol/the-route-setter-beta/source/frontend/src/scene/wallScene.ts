@@ -108,6 +108,7 @@ export interface WallSceneDebug {
   readonly previewObjectCount: number;
   readonly lastActionResult: SceneActionResult | null;
   readonly dragCandidatePosition: readonly number[] | null;
+  readonly targetNormal: readonly number[] | null;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -116,6 +117,7 @@ export interface WallSceneController {
   removeHold(id: string): boolean;
   hasHold(id: string): boolean;
   selectedHoldId(): string | null;
+  clearSelection(): void;
   interactionSnapshot(): InteractionSnapshot;
   onInteractionChange(listener: (snapshot: InteractionSnapshot) => void): () => void;
   beginAttachTargeting(): SceneActionResult;
@@ -240,6 +242,7 @@ export async function createWallScene(
   let targetPreview: TargetPreview | null = null;
   let targetInvalidUntil = 0;
   let targetResetTimer: ReturnType<typeof setTimeout> | null = null;
+  let targetingShadow: Group | null = null;
   let exporting = false;
   let lastActionResult: SceneActionResult | null = null;
   let dragSession: TransformDragSession | null = null;
@@ -309,6 +312,9 @@ export async function createWallScene(
       previewObjectCount: previewGroup.children.length,
       lastActionResult,
       dragCandidatePosition: dragSession?.candidatePosition.toArray() ?? null,
+      targetNormal: targetingShadow && targetPreview
+        ? new Vector3(0, 0, 1).applyQuaternion(targetingShadow.quaternion).toArray()
+        : null,
       dragPreview: dragSession ? {
         kind: dragSession.kind,
         start: dragSession.startScreenPoint,
@@ -501,6 +507,7 @@ export async function createWallScene(
     if (id === selectedHoldId) {
       return;
     }
+    disposeTargetingShadow();
     cancelTransformDrag();
     if (selectedHoldId) {
       const previous = holdInstances.get(selectedHoldId);
@@ -529,6 +536,11 @@ export async function createWallScene(
     const hit = raycastWallAt(point);
     if (hit) {
       const ellipse = targetEllipse(instance, hit.point, hit.normal);
+      ensureTargetingShadow(instance);
+      targetingShadow!.position.copy(hit.point);
+      targetingShadow!.quaternion.copy(orientationFromNormal(hit.normal, instance.twistRadians));
+      targetingShadow!.visible = true;
+      setShadowColor(targetingShadow!, performance.now() < targetInvalidUntil ? 0xff3b30 : 0xffd436);
       targetPreview = {
         center: point,
         diameterPx: targetDiameterPx(instance, hit.point, hit.normal),
@@ -537,7 +549,10 @@ export async function createWallScene(
         minorAxisRatio: ellipse.ratio,
         rotationRadians: ellipse.rotation,
       };
-    } else targetPreview = null;
+    } else {
+      if (targetingShadow) targetingShadow.visible = false;
+      targetPreview = null;
+    }
     notifyInteraction();
     render();
     return targetPreview;
@@ -580,6 +595,7 @@ export async function createWallScene(
     instance.contactPoint = dominant.point.clone();
     interactionMode = 'idle';
     targetPreview = null;
+    disposeTargetingShadow();
     physics.synchronizeRendering();
     render();
     return result('applied', 'Presa agganciata.');
@@ -598,11 +614,13 @@ export async function createWallScene(
       rotationRadians: 0,
     };
     const outcome = result('invalid-target', message);
+    if (targetingShadow) setShadowColor(targetingShadow, 0xff3b30);
     notifyInteraction();
     targetResetTimer = setTimeout(() => {
       targetResetTimer = null;
       if (interactionMode === 'attach-targeting' && targetPreview) {
         targetPreview = { ...targetPreview, feedback: 'normal' };
+        if (targetingShadow) setShadowColor(targetingShadow, 0xffd436);
         notifyInteraction();
       }
     }, 500);
@@ -906,6 +924,19 @@ export async function createWallScene(
     };
   }
 
+  function ensureTargetingShadow(instance: HoldSceneInstance): void {
+    if (targetingShadow) return;
+    targetingShadow = createShadow(instance.object, 0xffd436);
+    targetingShadow.name = `${instance.object.name}:attach-shadow`;
+    previewGroup.add(targetingShadow);
+  }
+
+  function disposeTargetingShadow(): void {
+    if (!targetingShadow) return;
+    disposeShadow(targetingShadow);
+    targetingShadow = null;
+  }
+
   function applyShadowPose(session: TransformDragSession): void {
     session.shadow.position.copy(session.candidatePosition);
     session.shadow.quaternion.copy(session.candidateRotation);
@@ -1164,6 +1195,7 @@ export async function createWallScene(
         return false;
       }
       if (selectedHoldId === id) {
+        disposeTargetingShadow();
         cancelTransformDrag();
         setSelection(null);
       }
@@ -1177,6 +1209,7 @@ export async function createWallScene(
     },
     hasHold: (id) => holdInstances.has(id),
     selectedHoldId: () => selectedHoldId,
+    clearSelection: () => setSelection(null),
     interactionSnapshot: getInteractionSnapshot,
     onInteractionChange: (listener) => {
       interactionListeners.add(listener);
@@ -1188,6 +1221,7 @@ export async function createWallScene(
       if (!instance || instance.physicalState !== 'detached') return result('not-available', 'Aggancio non disponibile.');
       interactionMode = 'attach-targeting';
       targetPreview = null;
+      disposeTargetingShadow();
       notifyInteraction();
       return result('applied', 'Seleziona un punto sulla parete.');
     },
@@ -1222,6 +1256,7 @@ export async function createWallScene(
     cancelInteraction: () => {
       if (targetResetTimer !== null) clearTimeout(targetResetTimer);
       targetResetTimer = null;
+      disposeTargetingShadow();
       const hadDrag = dragSession !== null;
       cancelTransformDrag();
       interactionMode = 'idle';
@@ -1266,7 +1301,7 @@ export async function createWallScene(
 }
 
 /** Crea una copia grafica trasparente condividendo geometrie e texture. */
-function createShadow(source: Group): Group {
+function createShadow(source: Group, color = 0xffd436): Group {
   const shadow = source.clone(true);
   shadow.name = `${source.name}:shadow`;
   shadow.traverse((object) => {
@@ -1279,11 +1314,22 @@ function createShadow(source: Group): Group {
       clone.opacity = 0.35;
       clone.depthTest = true;
       clone.depthWrite = false;
+      if ('color' in clone && clone.color instanceof Color) clone.color.setHex(color);
       return clone;
     });
     object.material = Array.isArray(object.material) ? previews : previews[0];
   });
   return shadow;
+}
+
+function setShadowColor(shadow: Group, color: number): void {
+  shadow.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => {
+      if ('color' in material && material.color instanceof Color) material.color.setHex(color);
+    });
+  });
 }
 
 /** Rilascia soltanto i materiali preview e mantiene geometrie/texture condivise. */

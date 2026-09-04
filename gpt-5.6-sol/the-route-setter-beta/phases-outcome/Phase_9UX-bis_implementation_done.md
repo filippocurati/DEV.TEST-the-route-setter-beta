@@ -10,13 +10,17 @@ La nuova implementazione conserva popup, targeting diretto e click incrementali 
 
 - drag-and-drop movimento dalle quattro frecce;
 - drag-and-drop rotazione dalle frecce circolari;
-- shadow 3D runtime senza asset aggiuntivi;
+- shadow 3D runtime senza asset aggiuntivi per targeting, movimento e rotazione;
 - linea/freccia e indicatore angolare;
 - hold reale e collider immutati durante il drag;
 - validazione endpoint-only al rilascio;
 - rollback totale su endpoint invalido;
 - camera completamente congelata durante drag;
 - shadow esclusa da picking ed export.
+- popup ridotto e alleggerito con sfondo semitrasparente;
+- `Escape` annulla l'interazione, torna a `idle`, deseleziona la hold e nasconde il popup.
+- handle circolari di movimento e rotazione ridotti e semitrasparenti;
+- pulsante `Dettagli` nel popup con riuso del viewer 3D del catalogo.
 
 ## 2. File modificati
 
@@ -60,12 +64,12 @@ La nuova implementazione conserva popup, targeting diretto e click incrementali 
 - `REQ-IMG-002`
 - `REQ-PRF-003`
 - `REQ-TST-010`
-- decisioni `DEC-011..016`
+- decisioni `DEC-011..022`
 - principi `C18`, `C20`, `C21`
 
 ## 4. Shadow runtime
 
-La shadow viene generata a runtime clonando la gerarchia grafica della hold selezionata:
+La shadow viene generata a runtime clonando la gerarchia grafica della hold selezionata ed e usata anche al posto del precedente cerchio/ellisse di aggancio:
 
 - nessun PNG o GLB aggiuntivo;
 - nessuna nuova richiesta REST;
@@ -76,9 +80,13 @@ La shadow viene generata a runtime clonando la gerarchia grafica della hold sele
 - nessun rigid body o collider;
 - rimozione di `holdModelId` per escludere il picking;
 - gruppo Three.js dedicato `HoldPreviewGroup`;
-- una sola shadow attiva.
+- una sola shadow attiva;
+- colore giallo durante il targeting ordinario;
+- colore rosso per 500 ms o fino al movimento successivo dopo un tentativo invalido;
+- pivot sul punto colpito e asse locale `+Z` allineato alla normale della parete;
+- prospettiva e inclinazione determinate direttamente dalla posa 3D rispetto alla camera.
 
-Al termine o annullamento del drag vengono disposti soltanto i materiali preview. Geometrie e texture condivise non vengono rilasciate.
+Al termine o annullamento del targeting o del drag vengono disposti soltanto i materiali preview. Geometrie e texture condivise non vengono rilasciate. Il footprint proiettato continua a definire internamente i 37 ray di campionamento, ma non viene piu renderizzato nel DOM.
 
 ## 5. Movimento drag
 
@@ -139,6 +147,11 @@ Al rilascio viene eseguita una sola validazione endpoint. La posa valida viene c
 14. Build backend Release: 0 warning, 0 errori.
 15. xUnit backend Release: 33/33 superati.
 16. `git diff --check`: superato.
+17. Sostituzione target DOM con shadow 3D di aggancio: completata senza nuovi asset, rigid body o collider.
+18. E2E shadow di aggancio, endpoint invalido e normale su parete inclinata: superati.
+19. Quality gate successivo alla sostituzione: build frontend superata, Vitest 44/44, Playwright 24/24, build backend 0 warning/0 errori, xUnit 33/33 e `git diff --check` superato.
+20. Popup contestuale reso piu compatto e trasparente; `Escape` esteso a deselezione e chiusura menu con rollback delle preview attive.
+21. Handle movimento/rotazione ridotti e alleggeriti; viewer dettagli condiviso reso disponibile dal popup della hold in scena.
 
 ## 9. Limiti accettati
 

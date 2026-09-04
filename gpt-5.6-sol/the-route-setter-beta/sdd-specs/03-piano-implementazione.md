@@ -453,11 +453,11 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - Principi `C16..C21`
 
 ### Vincoli e specifiche da garantire
-- popup con tutte le azioni e abilitazione per stato;
+- popup con tutte le azioni, incluso `Dettagli`, e abilitazione per stato;
 - modalita `idle`, `attach-targeting`, `moving`, `rotating` mutuamente esclusive;
 - aggancio diretto senza validazione del percorso detached-target;
-- target giallo/rosso DOM/SVG e campionamento dominante a 37 punti;
-- nessuna copertura minima richiesta per il cerchio;
+- shadow target gialla/rossa Three.js e campionamento dominante a 37 punti su footprint invisibile;
+- nessuna copertura minima richiesta per il footprint;
 - posa finale di aggancio verificata con Convex Hull;
 - sgancio da 0.50 m con incremento 0.10 m fino a 10 m;
 - rotazione mouse quantizzata a 1 grado;
@@ -471,7 +471,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - linea retta origine-target e nessun limite massimo di drag;
 - camera completamente congelata durante drag;
 - drag libero dalla mesh della hold disponibile solo in modalita `Sposta`;
-- target di aggancio reso come ellisse prospettica tangente alla parete;
+- target di aggancio reso come shadow 3D aderente alla parete;
 - verso del drag rotazione coerente col movimento del mouse;
 - confronto della normale corrente con la normale di aggancio, tolleranza 5 gradi;
 - blocco su cambio di superficie, diedro, spigolo o prominenza oltre soglia;
@@ -484,7 +484,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 1. Rifattorizzare `WallSceneController` con stato presentazionale e risultati azione espliciti.
 2. Estrarre `HoldInteractionController` e macchina a stati.
 3. Implementare `HoldContextMenu` con ancoraggio al bounding box proiettato.
-4. Implementare `WallTargetOverlay` e aggiornamento una volta per frame.
+4. Reimplementare il targeting visivo con shadow Three.js runtime, aggiornamento una volta per frame e footprint invisibile.
 5. Implementare campionamento a 37 punti, clustering e tie-break superficie dominante.
 6. Implementare commit diretto e validazione posa finale.
 7. Implementare sgancio progressivo senza fallback allo spawn.
@@ -499,17 +499,18 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 16. Aggiornare feedback e cleanup di materiali, pointer e modalita.
 17. Riscrivere unit test ed E2E interessati.
 18. Aggiungere drag libero dalla mesh selezionata mantenendo drag vincolato dalle frecce.
-19. Proiettare il disco target sulla tangente locale come ellisse orientata.
+19. Orientare la shadow target sulla normale locale e mantenere invisibile il footprint di campionamento.
 20. Invertire la convenzione del delta rotazione per seguire il mouse in coordinate CSS.
 
 ### Test da eseguire
-- popup visibile e ancorato dopo selezione;
+- popup compatto e semitrasparente visibile e ancorato dopo selezione;
+- `Dettagli` dal popup apre lo stesso viewer 3D on-demand del catalogo;
 - azioni abilitate correttamente in detached/attached;
 - popup aggiornato dopo orbit, resize e movimento;
-- target segue il mouse e usa limiti 48-160 px;
+- shadow target segue il mouse, adegua l'inclinazione alla normale e usa footprint campioni 48-160 px;
 - campionamento dominante su pannello, curva, bordo, centro in foro e parita;
-- target invalido rosso, hold invariata, targeting ancora attivo;
-- `Escape` annulla targeting/move/rotate e mantiene selezione;
+- shadow target invalida rossa, hold invariata, targeting ancora attivo;
+- `Escape` annulla targeting/move/rotate, deseleziona la hold e nasconde il popup;
 - aggancio diretto su superficie frontale, inclinata e laterale;
 - collisione finale parete/hold rifiutata;
 - sgancio a 0.50 m, fallback progressivo 0.10 m e fallimento a 10 m;
@@ -532,7 +533,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - drag senza limite totale della distanza richiesta;
 - drag libero dalla hold attivo solo in `moving`, con offset pointer-contact point preservato;
 - drag diretto sulla hold non cambia selezione e non muove la camera;
-- target ellittico orientato coerentemente con una superficie frontale e una inclinata;
+- shadow targeting orientata coerentemente con una superficie frontale e una inclinata;
 - verso della shadow rotazione coerente col lato della freccia trascinata;
 - comando export disabilitato durante drag e nuovamente disponibile dopo commit/cancel;
 - preview aggiornata al massimo una volta per frame, con misurazione percentile 95;

@@ -128,7 +128,7 @@ La UI mantiene una modalita globale mutuamente esclusiva:
 - `moving`;
 - `rotating`.
 
-Ogni cambio modalita interrompe timer, drag e pointer capture della modalita precedente. `Escape` torna a `idle` senza deselezionare la hold. Il cambio selezione termina la modalita attiva e apre il popup per la nuova selezione.
+Ogni cambio modalita interrompe timer, drag e pointer capture della modalita precedente. `Escape` torna a `idle`, annulla ogni preview senza commit, deseleziona la hold e nasconde il popup. Il cambio selezione termina la modalita attiva e apre il popup per la nuova selezione.
 
 ### Spawn iniziale detached
 
@@ -154,11 +154,11 @@ A parita di distanza dal centro, l'ordine dei candidati deve essere deterministi
 
 ## 7. Targeting, aggancio e validazione (vincolante dalla fase 9UX)
 
-### 7.1 Target pointer e overlay
+### 7.1 Target pointer e shadow di aggancio
 
-Il target e un elemento DOM/SVG nel contenitore viewport, non un oggetto Three.js.
+Il target visibile e una shadow Three.js runtime nel `previewGroup`. Il footprint della base viene calcolato e proiettato soltanto per determinare l'area dei 37 campioni; non viene renderizzato.
 
-Dimensionamento:
+Campionamento footprint:
 
 1. ricavare il footprint locale della base dai vertici del Convex Hull nella fascia `localZ <= minZ + max(0.002 m, 2% della profondita)`;
 2. se la fascia non contiene almeno tre vertici non collineari, usare come fallback l'estensione XY completa del Convex Hull;
@@ -170,12 +170,15 @@ Durante `pointermove`:
 
 - accumulare l'ultimo evento;
 - aggiornare al massimo una volta per `requestAnimationFrame`;
-- usare un solo ray Rapier camera-verso-TriMesh per posizione e visibilita del cerchio;
+- usare un solo ray Rapier camera-verso-TriMesh per posizione e visibilita della shadow;
+- collocare il pivot shadow sul punto hit;
+- orientare la shadow con `orientationFromNormal(normal, twistCorrente)`;
+- usare materiali preview gialli trasparenti;
 - non eseguire validazione completa della posa.
 
-Il target orientato viene calcolato senza query fisiche aggiuntive: dal punto e dalla normale del ray centrale costruire una base tangente ortonormale, creare due punti world a distanza pari al raggio fisico della base lungo i due assi, proiettare centro e punti nella camera e ricavare semiassi e rotazione dell'ellisse CSS/SVG. Il lato maggiore viene clamped a 48-160 px e il lato minore viene scalato dello stesso fattore per conservare il rapporto prospettico.
+Il footprint proiettato viene calcolato senza query fisiche aggiuntive a partire dai punti locali della base nella posa shadow. Il lato maggiore viene clamped a 48-160 px e lo stesso fattore viene applicato agli offset dei campioni.
 
-Al click eseguire i 37 campioni definiti da `REQ-UX-004`. I campioni sono espressi in coordinate normalizzate del cerchio e trasformati in coordinate canvas prima di costruire i ray camera.
+Al click eseguire i 37 campioni definiti da `REQ-UX-004`. I campioni sono espressi in coordinate normalizzate del footprint e trasformati in coordinate canvas prima di costruire i ray camera.
 
 ### 7.2 Raggruppamento superficie dominante
 
@@ -202,7 +205,7 @@ Il clustering e deterministico:
 8. definire per ogni gruppo `distance = minima distanza camera dei membri` e `stableId = minimo ID dei membri`;
 9. applicare i tie-break `contiene campione centrale -> distance minore -> stableId minore`.
 
-L'assenza di una soglia minima e intenzionale: i campioni mancanti non votano contro i campioni che colpiscono la parete. Nel gruppo vincente il punto candidato e il membro a distanza schermo minima dal centro del cerchio; in parita prevale l'indice campione minore.
+L'assenza di una soglia minima e intenzionale: i campioni mancanti non votano contro i campioni che colpiscono la parete. Nel gruppo vincente il punto candidato e il membro a distanza schermo minima dal centro del footprint; in parita prevale l'indice campione minore.
 
 ### 7.3 Commit diretto
 
@@ -332,8 +335,8 @@ La soglia click/drag e inizialmente `4 px`. Sotto soglia il rilascio produce il 
 
 ### 8.1 Componenti UI
 
-- `HoldContextMenu`: popup e stato abilitazione azioni;
-- `WallTargetOverlay`: cerchio, stato giallo/rosso e hint `Escape`;
+- `HoldContextMenu`: popup, stato abilitazione azioni e apertura del `HoldDetailsModal` condiviso con il catalogo;
+- `WallTargetOverlay`: stato della shadow targeting e hint `Escape`;
 - `HoldMoveHandles`: quattro frecce con click da 1 cm e drag transazionale oltre la soglia di 4 px;
 - `HoldRotationHandles`: frecce circolari e drag;
 - `HoldShadowPreview`: clone Three.js runtime, linea/freccia e arco;
@@ -393,9 +396,11 @@ surface-limit
 
 ### 8.4 Posizionamento popup e gizmo
 
-Usare il bounding box world della hold proiettato nella camera per ottenere il rettangolo CSS. Aggiornare su camera change, resize, selezione e trasformazione. Se il bounding box e interamente dietro la camera o fuori viewport, nascondere popup e gizmo; se e parzialmente visibile, clamp del popup ai bordi della viewport.
+Usare il bounding box world della hold proiettato nella camera per ottenere il rettangolo CSS. Aggiornare su camera change, resize, selezione e trasformazione. Se il bounding box e interamente dietro la camera o fuori viewport, nascondere popup e gizmo; se e parzialmente visibile, clamp del popup ai bordi della viewport. Il popup usa dimensioni compatte, fondo scuro semitrasparente e blur moderato, evitando un pannello opaco che copra la scena. Anche gli handle circolari usano diametro ridotto, fondo giallo semitrasparente, bordo sottile e ombra attenuata.
 
-La linea/freccia di movimento e l'arco di rotazione possono essere DOM/SVG, ma la shadow deve appartenere a un gruppo Three.js `previewGroup` dedicato. Tale gruppo viene escluso dal raycast di selezione e reso invisibile durante export.
+L'azione `Dettagli` risolve dal manifest gia memorizzato la hold selezionata e richiama la stessa istanza `HoldDetailsModal` usata dalle card catalogo. Il GLB viene caricato solo all'apertura e renderer, controlli e risorse vengono rilasciati alla chiusura.
+
+Le shadow di targeting, movimento e rotazione appartengono allo stesso gruppo Three.js `previewGroup` dedicato. Il gruppo viene escluso dal raycast di selezione e reso invisibile durante export. La shadow targeting usa materiale giallo, passa temporaneamente al rosso dopo un tentativo invalido e torna gialla al movimento successivo o dopo 500 ms.
 
 ### 8.5 Scope input
 

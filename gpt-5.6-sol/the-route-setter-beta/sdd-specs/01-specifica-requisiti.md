@@ -231,7 +231,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UI-004 - Tastiera e accessibilita.**
 - Non esistono shortcut globali per spostamento o rotazione hold.
-- `Escape` annulla `attach-targeting` e termina `moving`/`rotating`.
+- `Escape` annulla `attach-targeting`, `moving` o `rotating`, torna a `idle`, deseleziona la hold e nasconde il popup senza modificare la posa committata.
 - I pulsanti del popup restano utilizzabili tramite focus, `Enter` e `Space`; gli handle che producono movimento o rotazione sono mouse-only.
 - Le azioni semantiche del popup, incluso `Sgancia`, possono produrre cambi di stato o riposizionamenti diretti quando attivate da tastiera; il divieto riguarda gli input incrementali di movimento e rotazione.
 - Criteri: pressione delle vecchie shortcut non modifica le hold; hint `Escape` visibile nelle modalita attive.
@@ -240,10 +240,12 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UX-001 - Popup contestuale.**
 - Alla selezione di una hold compare un popup DOM vicino al bounding box proiettato della hold.
-- Il popup mostra sempre `Aggancia`, `Sgancia`, `Ruota`, `Sposta`, `Rimuovi`.
+- Il popup mostra sempre `Dettagli`, `Aggancia`, `Sgancia`, `Ruota`, `Sposta`, `Rimuovi`.
+- `Dettagli` e sempre abilitato e apre per la hold selezionata lo stesso viewer 3D on-demand usato dal catalogo.
 - Stato detached: `Aggancia` e `Rimuovi` abilitati.
 - Stato attached: `Sgancia`, `Ruota`, `Sposta`, `Rimuovi` abilitati.
-- Criteri: popup aggiornato durante camera, resize e trasformazioni; mantenuto nella viewport; nascosto in `attach-targeting` e durante export.
+- Il popup e compatto e usa uno sfondo semitrasparente con blur leggero per limitare l'occlusione della scena.
+- Criteri: popup aggiornato durante camera, resize e trasformazioni; mantenuto nella viewport; nascosto in `attach-targeting`, dopo `Escape` e durante export.
 
 **REQ-UX-002 - Macchina a stati interazione.**
 - Stati fisici hold: `detached`, `attached`.
@@ -252,15 +254,17 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Le modalita moving/rotating possono contenere una sessione drag transazionale con snapshot iniziale e posa candidata.
 - Criteri: una sola modalita attiva; una sola sessione drag; nessun timer, pointer capture, shadow o materiale preview resta attivo dopo l'uscita.
 
-**REQ-UX-003 - Cerchio target.**
-- Il target rappresenta un disco circolare tangente alla superficie nel punto colpito; la sua proiezione DOM/SVG appare come un'ellisse piena e trasparente, gialla in stato ordinario e rossa dopo un tentativo invalido.
-- Assi, rapporto e rotazione dell'ellisse derivano dalla proiezione prospettica di due assi tangenti locali; il lato maggiore e limitato fra `48 px` e `160 px`, preservando il rapporto fra gli assi.
+**REQ-UX-003 - Shadow target di aggancio.**
+- Il target visibile e una shadow 3D runtime della hold selezionata, gialla e trasparente in stato ordinario e rossa dopo un tentativo invalido.
+- La shadow usa geometrie e texture gia caricate, materiali preview dedicati e nessun collider/rigid body.
+- Pivot, inclinazione e prospettiva derivano dal punto e dalla normale del ray centrale; la base appare aderente alla parete rispetto alla camera.
+- Il footprint proiettato della base resta usato internamente per posizionare i 37 campioni ed e limitato fra `48 px` e `160 px`, ma non viene renderizzato come cerchio/ellisse.
 - Durante `pointermove` viene aggiornato al massimo una volta per frame usando il ray centrale.
-- Dopo un click invalido resta rosso per `500 ms` o fino al successivo movimento, poi torna giallo.
-- Criteri: parete visibile sotto il target; target assente fuori dalla parete; overlay escluso dall'export.
+- Dopo un click invalido la shadow resta rossa per `500 ms` o fino al successivo movimento, poi torna gialla.
+- Criteri: shadow assente fuori dalla parete; hold reale invariata durante targeting; shadow esclusa dal picking e dall'export.
 
 **REQ-UX-004 - Campionamento superficie dominante.**
-- Al click il cerchio usa `37` campioni deterministici: centro e tre anelli rispettivamente da `6`, `12`, `18` punti.
+- Al click il footprint invisibile usa `37` campioni deterministici: centro e tre anelli rispettivamente da `6`, `12`, `18` punti.
 - Ogni campione ha peso unitario ed esegue un raycast camera verso il primo triangolo visibile della parete.
 - Gli hit di campioni adiacenti nel pattern vengono raggruppati se la distanza world e inferiore o uguale al diametro fisico della base e la differenza delle normali e entro `5 gradi`; la chiusura transitiva definisce il gruppo.
 - Non esiste copertura minima: vince il gruppo con maggior peso fra i soli campioni validi.
@@ -271,14 +275,14 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UX-005 - Commit aggancio.**
 - Il click in `attach-targeting` costruisce una posa sul gruppo dominante.
-- Il punto candidato e il campione del gruppo dominante piu vicino al centro del cerchio; a pari distanza vince l'indice campione minore. La normale e stabilizzata usando i campioni del gruppo.
+- Il punto candidato e il campione del gruppo dominante piu vicino al centro del footprint; a pari distanza vince l'indice campione minore. La normale e stabilizzata usando i campioni del gruppo.
 - La posa valida viene applicata direttamente e il popup ricompare nello stato attached.
 - La posa invalida non sposta la hold, colora il target di rosso e mantiene il targeting.
 - `Escape` annulla senza modifiche.
 - Criteri: nessuna validazione del percorso detached-target; posa finale validata contro parete e altre hold.
 
 **REQ-UX-006 - Gizmo rotazione.**
-- Due frecce circolari DOM/SVG attorno alla hold selezionata.
+- Due frecce circolari DOM/SVG compatte e semitrasparenti attorno alla hold selezionata.
 - Click senza drag = `1 grado` con commit immediato.
 - Drag = shadow 3D trasparente piu arco/linea gialla; angolo candidato quantizzato a `1 grado` e calcolato dallo snapshot iniziale.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
@@ -287,7 +291,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: hold reale immutata durante drag; endpoint valido committato una volta; endpoint invalido lascia posa e twist iniziali; cleanup su pointerup, pointercancel, lostpointercapture, blur, cambio selezione, rimozione ed Escape.
 
 **REQ-UX-007 - Gizmo movimento.**
-- Quattro frecce DOM/SVG ai bordi della hold proiettata.
+- Quattro frecce DOM/SVG compatte e semitrasparenti ai bordi della hold proiettata.
 - Click senza drag = `1 cm`; piu click singoli restano disponibili. La pressione prolungata non avvia piu ripetizione automatica: superata la soglia drag, inizia la preview transazionale.
 - Drag dalla freccia = shadow 3D aderente alla parete piu linea/freccia gialla retta verso il target richiesto; movimento vincolato all'asse della freccia.
 - In modalita `moving`, il drag puo iniziare anche direttamente sulla mesh della hold selezionata; in questo caso il delta e libero in entrambe le dimensioni screen-space e mantiene l'offset iniziale pointer-contact point.

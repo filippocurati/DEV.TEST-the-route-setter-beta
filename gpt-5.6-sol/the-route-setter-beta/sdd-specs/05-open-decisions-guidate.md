@@ -8,7 +8,7 @@ Stato: CHIUSA dalla fase 9UX.
 
 Decisione:
 - rimuovere tutte le shortcut globali per movimento e rotazione hold;
-- mantenere `Escape` per annullare targeting e terminare le modalita;
+- usare `Escape` per annullare targeting e modalita, deselezionare la hold e nascondere il popup;
 - mantenere accessibilita standard dei pulsanti popup con `Tab`, `Enter`, `Space`;
 - mantenere mouse-only gli handle che producono trasformazioni.
 
@@ -199,3 +199,33 @@ Decisione:
 - il segno del drag deve fare seguire al punto della hold piu vicino alla freccia selezionata il movimento del mouse;
 - la convenzione tiene conto dell'asse Y dello schermo orientato verso il basso;
 - il comportamento click da 1 grado resta invariato.
+
+## DEC-020 - Shadow targeting aggancio
+
+Stato: CHIUSA.
+
+Decisione:
+- il cerchio/ellisse visibile di targeting e sostituito dalla shadow 3D runtime della hold;
+- il footprint proiettato resta usato internamente per i 37 campioni;
+- la shadow e gialla normalmente e rossa dopo un endpoint invalido;
+- posizione e inclinazione seguono il ray centrale e la normale locale;
+- nessun asset aggiuntivo, collider o rigid body;
+- shadow esclusa da picking ed export.
+
+## DEC-021 - Escape e alleggerimento popup
+
+Stato: CHIUSA.
+
+Decisione:
+- `Escape` annulla la sessione attiva senza commit, torna a `idle`, deseleziona la hold e nasconde il popup;
+- il blur della finestra continua ad annullare l'interazione senza imporre la deselezione;
+- il popup usa controlli piu piccoli e uno sfondo semitrasparente con blur leggero per ridurre l'occlusione della scena.
+
+## DEC-022 - Dettagli dal popup e handle leggeri
+
+Stato: CHIUSA.
+
+Decisione:
+- il popup della hold selezionata include `Dettagli`, sempre disponibile;
+- `Dettagli` riusa il viewer 3D del catalogo e il manifest gia memorizzato, senza eager-load aggiuntivo;
+- gli handle circolari di movimento e rotazione sono ridotti e semitrasparenti per limitare l'occlusione della scena.

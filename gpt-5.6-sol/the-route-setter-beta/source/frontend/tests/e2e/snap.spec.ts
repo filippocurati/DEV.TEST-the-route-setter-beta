@@ -21,15 +21,18 @@ test.describe('aggancio contestuale 9UX', () => {
     await expect(popup.getByRole('button', { name: 'Sgancia' })).toBeEnabled();
   });
 
-  test('annulla il targeting con Escape mantenendo selezione e posa', async ({ page }) => {
+  test('annulla il targeting con Escape deselezionando senza cambiare posa', async ({ page }) => {
     const before = await sceneState(page);
     await page.getByRole('button', { name: 'Aggancia' }).click();
     await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('attach-targeting');
     await page.keyboard.press('Escape');
     const after = await sceneState(page);
     expect(after.interactionMode).toBe('idle');
-    expect(after.selectedHoldId).toBe('Hold1');
-    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.selectedHoldId).toBeNull();
+    expect(after.previewObjectCount).toBe(0);
+    await expect(page.getByRole('toolbar', { name: 'Azioni presa selezionata' })).toBeHidden();
+    await clickHold(page, 'Hold1');
+    expect((await sceneState(page)).selectedHoldPosition).toEqual(before.selectedHoldPosition);
   });
 
   test('sgancia cercando una posa valida da cinquanta centimetri', async ({ page }) => {
@@ -88,17 +91,13 @@ test.describe('aggancio contestuale 9UX', () => {
     await page.getByRole('button', { name: 'Aggancia' }).click();
     const canvas = page.locator('[data-scene-canvas]');
     const box = await canvas.boundingBox();
-    const target = page.locator('[data-wall-target]');
     let found = false;
     for (const x of [0.15, 0.22, 0.3, 0.38]) {
       for (const y of [0.3, 0.4, 0.5, 0.6, 0.7]) {
         await page.mouse.move(box!.x + box!.width * x, box!.y + box!.height * y);
-        if (await target.isVisible()) {
-          const dimensions = await target.evaluate((element) => ({
-            width: Number.parseFloat(getComputedStyle(element).width),
-            height: Number.parseFloat(getComputedStyle(element).height),
-          }));
-          if (dimensions.height < dimensions.width * 0.99) {
+        const state = await sceneState(page);
+        if (state.previewObjectCount === 1 && state.targetNormal) {
+          if (Math.abs(state.targetNormal[1]) > 0.05 || Math.abs(state.targetNormal[0]) > 0.05) {
             found = true;
             break;
           }
@@ -107,15 +106,7 @@ test.describe('aggancio contestuale 9UX', () => {
       if (found) break;
     }
     expect(found).toBe(true);
-    const style = await target.evaluate((element) => ({
-      width: Number.parseFloat(getComputedStyle(element).width),
-      height: Number.parseFloat(getComputedStyle(element).height),
-      rotate: getComputedStyle(element).rotate,
-    }));
-    expect(style.width).toBeGreaterThan(0);
-    expect(style.height).toBeGreaterThan(0);
-    expect(style.height).toBeLessThanOrEqual(style.width);
-    expect(style.rotate).not.toBe('none');
+    expect((await sceneState(page)).previewObjectCount).toBe(1);
   });
 });
 
@@ -124,9 +115,20 @@ async function attachAtWallCenter(page: Page): Promise<void> {
   const canvas = page.locator('[data-scene-canvas]');
   const box = await canvas.boundingBox();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
-  await expect(page.getByRole('img', { name: 'Target di aggancio' })).toBeVisible();
+  await expect.poll(async () => (await sceneState(page)).previewObjectCount).toBe(1);
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await expect.poll(async () => (await sceneState(page)).holdStates.Hold1.physicalState).toBe('attached');
+}
+
+async function clickHold(page: Page, id: string): Promise<void> {
+  const canvas = page.locator('[data-scene-canvas]');
+  const box = await canvas.boundingBox();
+  const [x, y] = (await sceneState(page)).holdScreenPositions[id];
+  await page.mouse.click(
+    box!.x + ((x + 1) / 2) * box!.width,
+    box!.y + ((1 - y) / 2) * box!.height,
+  );
+  await expect.poll(async () => (await sceneState(page)).selectedHoldId).toBe(id);
 }
 
 async function sceneState(page: Page) {

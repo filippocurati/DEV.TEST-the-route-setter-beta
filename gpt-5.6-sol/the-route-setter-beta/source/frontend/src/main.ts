@@ -135,7 +135,25 @@ async function bootstrap(): Promise<void> {
       feedback.textContent = `${selectedId} riportata nel catalogo.`;
       void renderCatalog();
     };
+    const showSelectedDetails = async (): Promise<void> => {
+      const selectedId = scene.selectedHoldId();
+      if (!selectedId) return;
+      const hold = (await catalog.loadManifest()).find((candidate) => candidate.id === selectedId);
+      if (!hold) {
+        feedback.textContent = 'Dettagli della presa non disponibili.';
+        return;
+      }
+      feedback.textContent = `Apertura dettagli ${hold.id}...`;
+      try {
+        await details.open(hold);
+        feedback.textContent = '';
+      } catch (error) {
+        details.close();
+        feedback.textContent = error instanceof Error ? error.message : 'Impossibile mostrare i dettagli.';
+      }
+    };
     const overlay = new HoldOverlay(viewport, {
+      details: () => void showSelectedDetails(),
       attach: () => scene.beginAttachTargeting(),
       detach: () => scene.detachSelected(),
       moveMode: () => scene.beginMoving(),
@@ -168,7 +186,8 @@ async function bootstrap(): Promise<void> {
       if (event.key !== 'Escape') return;
       overlay.cancel();
       scene.cancelInteraction();
-      feedback.textContent = 'Modalità terminata.';
+      scene.clearSelection();
+      feedback.textContent = 'Interazione annullata e presa deselezionata.';
     });
     window.addEventListener('blur', () => {
       overlay.cancel();

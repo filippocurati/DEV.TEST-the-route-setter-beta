@@ -12,13 +12,26 @@ test.describe('selezione e comandi contestuali 9UX', () => {
   test('mostra popup completo e abilita le azioni secondo lo stato', async ({ page }) => {
     const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
     await expect(popup).toBeVisible();
-    for (const name of ['Aggancia', 'Sgancia', 'Ruota', 'Sposta', 'Rimuovi']) {
+    for (const name of ['Dettagli', 'Aggancia', 'Sgancia', 'Ruota', 'Sposta', 'Rimuovi']) {
       await expect(popup.getByRole('button', { name })).toBeVisible();
     }
     await expect(popup.getByRole('button', { name: 'Aggancia' })).toBeEnabled();
     await expect(popup.getByRole('button', { name: 'Sgancia' })).toBeDisabled();
     await expect(popup.getByRole('button', { name: 'Ruota' })).toBeDisabled();
     await expect(popup.getByRole('button', { name: 'Sposta' })).toBeDisabled();
+  });
+
+  test('apre dal popup lo stesso viewer dettagli 3D del catalogo', async ({ page }) => {
+    const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
+    await popup.getByRole('button', { name: 'Dettagli' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Dettagli Hold1' })).toBeVisible();
+    await expect(dialog.locator('[data-details-canvas]')).toBeVisible({ timeout: 60_000 });
+    await dialog.getByRole('button', { name: 'Chiudi dettagli' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(popup).toBeVisible();
   });
 
   test('le shortcut legacy non trasformano la presa', async ({ page }) => {
@@ -42,7 +55,7 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(after.colliderCount).toBe(before.colliderCount - 1);
   });
 
-  test('sposta e ruota tramite gizmo mouse e termina le modalità con Escape', async ({ page }) => {
+  test('sposta e ruota tramite gizmo mouse e Escape deseleziona la presa', async ({ page }) => {
     await attachAtWallCenter(page);
     const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
     const beforeMove = await sceneState(page);
@@ -59,7 +72,9 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect((await sceneState(page)).interactionMode).toBe('moving');
 
     await page.keyboard.press('Escape');
-    await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('idle');
+    await expect.poll(async () => (await sceneState(page)).selectedHoldId).toBeNull();
+    await expect(popup).toBeHidden();
+    await clickHold(page, 'Hold1');
     await popup.getByRole('button', { name: 'Ruota' }).click();
     const beforeRotate = (await sceneState(page)).selectedHoldRotation!;
     await page.locator('[data-rotate="clockwise"]').click();
@@ -89,6 +104,7 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(moveElapsed).toBeLessThan(3_000);
 
     await page.keyboard.press('Escape');
+    await clickHold(page, 'Hold1');
     await popup.getByRole('button', { name: 'Ruota' }).click();
     const rotateElapsed = await page.locator('[data-rotate="clockwise"]').evaluate((element) => {
       const started = performance.now();
@@ -150,11 +166,15 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(preview.cameraPosition).toEqual(before.cameraPosition);
     expect(preview.orbitControlsEnabled).toBe(false);
     await page.keyboard.press('Escape');
-    const after = await sceneState(page);
-    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    let after = await sceneState(page);
     expect(after.dragPreview).toBeNull();
     expect(after.previewObjectCount).toBe(0);
     expect(after.orbitControlsEnabled).toBe(true);
+    expect(after.selectedHoldId).toBeNull();
+    await expect(page.getByRole('toolbar', { name: 'Azioni presa selezionata' })).toBeHidden();
+    await clickHold(page, 'Hold1');
+    after = await sceneState(page);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
   });
 
   test('committa la rotazione shadow soltanto al rilascio', async ({ page }) => {

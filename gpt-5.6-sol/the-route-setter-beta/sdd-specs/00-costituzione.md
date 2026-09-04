@@ -75,7 +75,7 @@ Aggancio, sgancio, spostamento e rotazione devono usare l'intero Convex Hull del
 Una presa agganciata puo seguire soltanto piccole variazioni della superficie locale entro la tolleranza angolare rispetto alla normale di aggancio. Diedri, spigoli, prominenze e cambi di inclinazione oltre soglia sono bloccanti; non e prevista transizione automatica fra superfici.
 
 **C20 - Interazione contestuale pointer-based.**
-Le azioni hold sono fornite da un popup contestuale e da overlay DOM/SVG. Non sono previste shortcut globali per trasformare le prese. Le modalita di targeting, spostamento e rotazione sono mutuamente esclusive e annullabili con `Escape`. I drag di spostamento e rotazione usano una shadow 3D runtime priva di collider; nessun file preview aggiuntivo e richiesto.
+Le azioni hold sono fornite da un popup contestuale e da overlay DOM/SVG. Non sono previste shortcut globali per trasformare le prese. Le modalita di targeting, spostamento e rotazione sono mutuamente esclusive e annullabili con `Escape`; la stessa azione deseleziona la hold e nasconde il popup. I drag di spostamento e rotazione usano una shadow 3D runtime priva di collider; nessun file preview aggiuntivo e richiesto.
 
 **C21 - Overlay esclusi dall'export.**
 Popup, target, hint, gizmo, linee, archi e shadow 3D di preview non fanno parte della scena esportata e devono essere nascosti o esclusi durante la generazione dell'immagine.
