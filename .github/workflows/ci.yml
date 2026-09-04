@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gpt-5.6-sol/the-route-setter-beta/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: gpt-5.6-sol/the-route-setter-beta/source/global.json
+      - name: Restore locked dependencies
+        env:
+          ContinuousIntegrationBuild: "true"
+        run: dotnet restore TheRouteSetter.sln --locked-mode
+      - name: Build backend
+        run: dotnet build TheRouteSetter.sln --configuration Release --no-restore
+      - name: Test backend
+        run: dotnet test TheRouteSetter.sln --configuration Release --no-build --no-restore --logger "trx;LogFileName=backend-tests.trx" --results-directory TestResults
+      - name: Verify NuGet lockfiles
+        run: git diff --exit-code -- backend/src/TheRouteSetter.Api/packages.lock.json backend/tests/TheRouteSetter.Api.Tests/packages.lock.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: gpt-5.6-sol/the-route-setter-beta/source/TestResults
+          if-no-files-found: error
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gpt-5.6-sol/the-route-setter-beta/source/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: gpt-5.6-sol/the-route-setter-beta/source/frontend/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: gpt-5.6-sol/the-route-setter-beta/source/global.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build frontend
+        run: npm run build
+      - name: Check requirement traceability
+        run: npm run test:traceability
+      - name: Test frontend
+        run: npm run test:unit:ci
+      - name: Test end to end
+        run: npm run test:e2e:ci
+      - name: Verify npm lockfile
+        run: git diff --exit-code -- package-lock.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-test-results
+          path: |
+            gpt-5.6-sol/the-route-setter-beta/source/frontend/test-results
+            gpt-5.6-sol/the-route-setter-beta/source/frontend/playwright-report
+          if-no-files-found: error

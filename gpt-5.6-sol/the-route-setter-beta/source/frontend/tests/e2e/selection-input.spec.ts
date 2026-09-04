@@ -123,9 +123,10 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     const handle = page.locator('[data-move="up"]');
     const box = await handle.boundingBox();
     const before = await sceneState(page);
-    const apiRequests: string[] = [];
+    const assetRequests: string[] = [];
     page.on('request', (request) => {
-      if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url());
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith('.png') || path.endsWith('.glb') || path.endsWith('/model')) assetRequests.push(path);
     });
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
@@ -133,20 +134,48 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     const preview = await sceneState(page);
 
     expect(preview.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(preview.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(preview.holdStates.Hold1.contactPoint).toEqual(before.holdStates.Hold1.contactPoint);
+    expect(preview.holdStates.Hold1.attachmentNormal).toEqual(before.holdStates.Hold1.attachmentNormal);
+    expect(preview.holdStates.Hold1.twistRadians).toBe(before.holdStates.Hold1.twistRadians);
+    expect(preview.poseValidationCount).toBe(before.poseValidationCount);
     expect(preview.dragPreview?.kind).toBe('move');
     expect(preview.previewObjectCount).toBe(1);
     expect(preview.rigidBodyCount).toBe(before.rigidBodyCount);
     expect(preview.colliderCount).toBe(before.colliderCount);
-    expect(apiRequests).toEqual([]);
+    expect(assetRequests).toEqual([]);
     await expect(page.locator('[data-drag-indicator]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeDisabled();
 
     await page.mouse.up();
     const after = await sceneState(page);
+    expect(after.poseValidationCount).toBe(before.poseValidationCount + 1);
     expect(after.dragPreview).toBeNull();
     expect(after.previewObjectCount).toBe(0);
     expect(after.selectedHoldPosition).not.toEqual(before.selectedHoldPosition);
     await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeEnabled();
+  });
+
+  test('pointercancel annulla il drag e rilascia preview e camera', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const handle = page.locator('[data-move="up"]');
+    const box = await handle.boundingBox();
+    const before = await sceneState(page);
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y - 60, { steps: 3 });
+    await expect.poll(async () => (await sceneState(page)).previewObjectCount).toBe(1);
+    await handle.dispatchEvent('pointercancel', { pointerType: 'mouse', pointerId: 1 });
+    await page.mouse.up();
+
+    const after = await sceneState(page);
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(after.previewObjectCount).toBe(0);
+    expect(after.dragPreview).toBeNull();
+    expect(after.orbitControlsEnabled).toBe(true);
+    expect(after.poseValidationCount).toBe(before.poseValidationCount);
   });
 
   test('annulla drag rotazione con Escape senza mutare la posa reale', async ({ page }) => {

@@ -25,10 +25,16 @@
 | REQ-PRF-001..006 | 02 §11 | Benchmark scena + preview drag + latenza commit endpoint |
 | REQ-ERR-001..005 | 02 §10 | Error tests backend/frontend |
 | REQ-LOG-001..007 | 02 §10 | Logging structure/sanitization/rotation tests |
-| REQ-TST-001..007 | 03 FASE 10 | CI suite normativa attiva |
+| REQ-TST-001 | 03 FASE 10 | `.github/workflows/ci.yml`: ogni comando mantiene il proprio exit code bloccante |
+| REQ-TST-002 | 03 FASE 10 | xUnit `TheRouteSetter.Api.Tests` + report TRX CI |
+| REQ-TST-003 | 03 FASE 2/10 | `ColliderProcessorTests`: generazione, riuso e rigenerazione hull |
+| REQ-TST-004 | 03 FASE 3/10 | `ApiSmokeTests`, `AssetApiIntegrationTests`, `ErrorApiIntegrationTests` |
+| REQ-TST-005 | 03 FASE 10 | Playwright `tests/e2e/*.spec.ts` + report JUnit/HTML CI |
+| REQ-TST-006 | 03 FASE 6/10 | Vitest `physics/setup.smoke.test.ts`, inclusi rimozione libera spazio e regressione collisioni |
+| REQ-TST-007 | 03 FASE 10 | Ripetizione deterministica scenario fisico + test tie-break e spawn deterministici |
 | REQ-TST-008 | 03 FASE 8 congelata | Test storici snap automatico, sostituiti dalla FASE 9UX |
-| REQ-TST-009 | 02 §12, 03 FASE 0/10 | CI dependency lock check |
-| REQ-TST-010 | 02 §7..8, 03 FASE 9UX/10 | Unit UX + shadow runtime + E2E drag transazionale completo |
+| REQ-TST-009 | 02 §12, 03 FASE 0/10 | `npm ci`, `dotnet restore --locked-mode` e verifica diff lockfile in CI |
+| REQ-TST-010 | 02 §7..8, 03 FASE 9UX/10 | Unit UX + E2E drag transazionale, invarianti pointermove, singola validazione endpoint e cleanup pointercancel |
 | DEC-011..022 | 02 §7.1, §7.6..7.9, §8.1..8.4, §9, 03 FASE 9UX | Test report 9UX-bis: report preservato, shadow runtime per targeting/drag, endpoint-only, drag libero/vincolato, verso rotazione, camera congelata, export disabilitato, popup compatto, dettagli condivisi ed Escape con deselezione |
 | REQ-DEP-001..003 | 02 §12 | Restore/build deterministico in CI |
 | REQ-DEP-004 | 02 §12, 03 FASE 0 | Dependency baseline verification |

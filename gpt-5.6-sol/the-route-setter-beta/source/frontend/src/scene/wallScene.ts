@@ -109,6 +109,7 @@ export interface WallSceneDebug {
   readonly lastActionResult: SceneActionResult | null;
   readonly dragCandidatePosition: readonly number[] | null;
   readonly targetNormal: readonly number[] | null;
+  readonly poseValidationCount: number;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -246,6 +247,7 @@ export async function createWallScene(
   let exporting = false;
   let lastActionResult: SceneActionResult | null = null;
   let dragSession: TransformDragSession | null = null;
+  let poseValidationCount = 0;
   let lastExportCamera: CameraSnapshot | null = null;
   let lastExportDimensions: readonly number[] | null = null;
   frameWall(camera, controls, wall.bounds, wall.center, wall.size);
@@ -315,6 +317,7 @@ export async function createWallScene(
       targetNormal: targetingShadow && targetPreview
         ? new Vector3(0, 0, 1).applyQuaternion(targetingShadow.quaternion).toArray()
         : null,
+      poseValidationCount,
       dragPreview: dragSession ? {
         kind: dragSession.kind,
         start: dragSession.startScreenPoint,
@@ -586,7 +589,7 @@ export async function createWallScene(
     const dominant = selectDominantSurface(hits, instance.baseDiameterMeters, targetSamples, targetAdjacency);
     if (!dominant) return invalidateTarget('Nessuna superficie valida nel target.');
     const rotation = orientationFromNormal(dominant.normal, instance.twistRadians);
-    const validation = physics.validatePose(instance.physics, dominant.point, rotation, dominant.normal);
+    const validation = validatePose(instance, dominant.point, rotation, dominant.normal);
     if (!validation.valid) return invalidateTarget('La presa non può essere collocata in questo punto.');
     physics.setKinematicTransform(instance.physics, dominant.point, rotation);
     instance.physicalState = 'attached';
@@ -636,7 +639,7 @@ export async function createWallScene(
     for (let index = 0; index <= 95; index += 1) {
       const distance = 0.5 + index * 0.1;
       const target = instance.contactPoint.clone().addScaledVector(instance.attachmentNormal, distance);
-      if (!physics.validatePose(instance.physics, target, instance.initialRotation, instance.attachmentNormal).valid) continue;
+      if (!validatePose(instance, target, instance.initialRotation, instance.attachmentNormal).valid) continue;
       physics.setKinematicTransform(instance.physics, target, instance.initialRotation);
       instance.physicalState = 'detached';
       instance.attachmentNormal = null;
@@ -800,8 +803,8 @@ export async function createWallScene(
     if (!session || session.kind !== 'move' || session.pointerId !== pointerId || !instance) {
       return result('not-available', 'Nessuna anteprima movimento attiva.');
     }
-    const valid = physics.validatePose(
-      instance.physics,
+    const valid = validatePose(
+      instance,
       session.candidatePosition,
       session.candidateRotation,
       session.candidateNormal,
@@ -862,8 +865,8 @@ export async function createWallScene(
     if (!session || session.kind !== 'rotate' || session.pointerId !== pointerId || !instance) {
       return result('not-available', 'Nessuna anteprima rotazione attiva.');
     }
-    const valid = physics.validatePose(
-      instance.physics,
+    const valid = validatePose(
+      instance,
       session.candidatePosition,
       session.candidateRotation,
       session.candidateNormal,
@@ -1060,8 +1063,8 @@ export async function createWallScene(
     );
     for (let step = 1; step <= steps; step += 1) {
       const fraction = step / steps;
-      if (!physics.validatePose(
-        instance.physics,
+      if (!validatePose(
+        instance,
         startPosition.clone().lerp(endPosition, fraction),
         startRotation.clone().slerp(endRotation, fraction),
         outwardNormal,
@@ -1079,7 +1082,7 @@ export async function createWallScene(
     outwardNormal: Vector3,
   ): number {
     const startRotation = new Quaternion(fromRotation.x, fromRotation.y, fromRotation.z, fromRotation.w);
-    if (physics.validatePose(instance.physics, toPosition, toRotation, outwardNormal).valid) return 1;
+    if (validatePose(instance, toPosition, toRotation, outwardNormal).valid) return 1;
     const steps = Math.max(
       1,
       Math.ceil(fromPosition.distanceTo(toPosition) / 0.001),
@@ -1088,8 +1091,8 @@ export async function createWallScene(
     let lastValid = 0;
     for (let step = 1; step < steps; step += 1) {
       const fraction = step / steps;
-      if (!physics.validatePose(
-        instance.physics,
+      if (!validatePose(
+        instance,
         fromPosition.clone().lerp(toPosition, fraction),
         startRotation.clone().slerp(toRotation, fraction),
         outwardNormal,
@@ -1097,6 +1100,16 @@ export async function createWallScene(
       lastValid = fraction;
     }
     return lastValid;
+  }
+
+  function validatePose(
+    instance: HoldSceneInstance,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+    outwardNormal?: RAPIER.Vector,
+  ) {
+    poseValidationCount += 1;
+    return physics.validatePose(instance.physics, translation, rotation, outwardNormal);
   }
 
   return {

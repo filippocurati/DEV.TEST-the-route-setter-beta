@@ -158,6 +158,52 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('rende nuovamente disponibile una posa quando la hold che la occupa viene rimossa', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+    const moving = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(-0.5, 0, 0.2),
+      new Quaternion(),
+    );
+    const blocker = physics.createKinematicObject(
+      RAPIER.ColliderDesc.ball(0.1),
+      new Vector3(0.5, 0, 0.2),
+      new Quaternion(),
+    );
+    const target = { x: 0.5, y: 0, z: 0.2 };
+
+    expect(physics.canPlaceWithoutHoldOverlap(moving, target, new Quaternion())).toBe(false);
+    physics.removeKinematicObject(blocker);
+    expect(physics.canPlaceWithoutHoldOverlap(moving, target, new Quaternion())).toBe(true);
+    physics.dispose();
+  });
+
+  it('ripete deterministicamente lo stesso scenario di collisione fisica', async () => {
+    const outcomes: string[] = [];
+    for (let iteration = 0; iteration < 10; iteration += 1) {
+      const physics = await PhysicsWorld.create(createPlaneTriMesh());
+      const moving = physics.createKinematicObject(
+        RAPIER.ColliderDesc.ball(0.1),
+        new Vector3(0, 0, 0.2),
+        new Quaternion(),
+      );
+      physics.createKinematicObject(
+        RAPIER.ColliderDesc.ball(0.1),
+        new Vector3(0.15, 0, 0.2),
+        new Quaternion(),
+      );
+      const blocked = physics.validatePose(moving, { x: 0.15, y: 0, z: 0.2 }, new Quaternion());
+      const free = physics.validatePose(moving, { x: -0.5, y: 0, z: 0.2 }, new Quaternion());
+      outcomes.push(JSON.stringify({ blocked, free }));
+      physics.dispose();
+    }
+
+    expect(new Set(outcomes)).toEqual(new Set([JSON.stringify({
+      blocked: { valid: false, blocker: 'hold' },
+      free: { valid: true, blocker: null },
+    })]));
+  });
+
   it('valida le pose 9UX contro parete e altre hold', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
     const moving = physics.createKinematicObject(

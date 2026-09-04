@@ -1,0 +1,11 @@
+{
+  "REQ-TST-001": ["../../../.github/workflows/ci.yml"],
+  "REQ-TST-002": ["backend/tests/TheRouteSetter.Api.Tests/TheRouteSetter.Api.Tests.csproj"],
+  "REQ-TST-003": ["backend/tests/TheRouteSetter.Api.Tests/ColliderProcessorTests.cs"],
+  "REQ-TST-004": ["backend/tests/TheRouteSetter.Api.Tests/ApiSmokeTests.cs", "backend/tests/TheRouteSetter.Api.Tests/AssetApiIntegrationTests.cs", "backend/tests/TheRouteSetter.Api.Tests/ErrorApiIntegrationTests.cs"],
+  "REQ-TST-005": ["frontend/tests/e2e/catalog.spec.ts", "frontend/tests/e2e/export.spec.ts", "frontend/tests/e2e/selection-input.spec.ts", "frontend/tests/e2e/snap.spec.ts", "frontend/tests/e2e/startup.spec.ts"],
+  "REQ-TST-006": ["frontend/tests/physics/setup.smoke.test.ts"],
+  "REQ-TST-007": ["frontend/tests/physics/setup.smoke.test.ts", "frontend/tests/scene/spawnCandidates.test.ts", "frontend/tests/interaction/targetSampling.test.ts"],
+  "REQ-TST-009": ["../../../.github/workflows/ci.yml", "Directory.Build.props", "frontend/package-lock.json", "backend/src/TheRouteSetter.Api/packages.lock.json", "backend/tests/TheRouteSetter.Api.Tests/packages.lock.json"],
+  "REQ-TST-010": ["frontend/tests/interaction/interactionTypes.test.ts", "frontend/tests/interaction/targetSampling.test.ts", "frontend/tests/input/holdCommands.test.ts", "frontend/tests/e2e/selection-input.spec.ts", "frontend/tests/e2e/snap.spec.ts", "frontend/tests/e2e/export.spec.ts"]
+}
