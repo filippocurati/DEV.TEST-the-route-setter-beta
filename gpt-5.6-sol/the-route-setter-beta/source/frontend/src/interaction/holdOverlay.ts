@@ -58,6 +58,7 @@ export class HoldOverlay {
   private pendingRotationPoint: { x: number; y: number } | null = null;
   private contactScreenPoint: { x: number; y: number } | null = null;
 
+  /** Crea l'overlay, collega i controlli DOM e registra una sola volta i listener pointer. */
   constructor(private readonly container: HTMLElement, private readonly actions: HoldOverlayActions) {
     this.root = document.createElement('div');
     this.root.className = 'hold-overlay';
@@ -96,6 +97,7 @@ export class HoldOverlay {
     this.bindRotationHandles();
   }
 
+  /** Sincronizza visibilita, posizione e stato dei controlli con lo snapshot corrente della scena. */
   update(snapshot: InteractionSnapshot): void {
     const selected = snapshot.selected;
     this.contactScreenPoint = selected?.contactScreenPoint ?? null;
@@ -124,12 +126,14 @@ export class HoldOverlay {
     this.updateDragIndicator(snapshot);
   }
 
+  /** Annulla le gesture locali e delega alla scena il rollback dell'eventuale preview 3D. */
   cancel(): void {
     this.finishMove(false);
     this.finishRotation();
     this.actions.cancelTransformDrag();
   }
 
+  /** Collega le azioni semantiche del popup ai comandi forniti dal bootstrap applicativo. */
   private bindMenu(): void {
     this.buttons.get('details')!.addEventListener('click', () => this.actions.details());
     this.buttons.get('attach')!.addEventListener('click', () => this.report(this.actions.attach()));
@@ -139,6 +143,7 @@ export class HoldOverlay {
     this.buttons.get('remove')!.addEventListener('click', () => this.actions.remove());
   }
 
+  /** Gestisce click e drag degli handle lineari, inclusi pointer capture e cancellazione. */
   private bindMoveHandles(): void {
     this.moveHandles.querySelectorAll<HTMLElement>('[data-move]').forEach((handle) => {
       handle.addEventListener('pointerdown', (event) => {
@@ -168,6 +173,7 @@ export class HoldOverlay {
     });
   }
 
+  /** Gestisce click e drag degli handle angolari senza trasformare direttamente la hold reale. */
   private bindRotationHandles(): void {
     this.rotationHandles.querySelectorAll<HTMLElement>('[data-rotate]').forEach((handle) => {
       handle.addEventListener('pointerdown', (event) => {
@@ -221,6 +227,7 @@ export class HoldOverlay {
     });
   }
 
+  /** Superata la soglia di 4 px avvia la preview e ne limita gli aggiornamenti a un RAF. */
   private updateMovePointer(event: PointerEvent): void {
     if (!this.movePointer || event.pointerId !== this.movePointer.id) return;
     const point = this.viewportPoint(event);
@@ -246,6 +253,7 @@ export class HoldOverlay {
     }
   }
 
+  /** Ancora gli handle al contact point proiettato, con fallback al centro del bounding box. */
   private positionHandles(snapshot: InteractionSnapshot): void {
     const bounds = snapshot.selected!.screenBounds;
     const centerX = snapshot.selected!.contactScreenPoint?.x ?? (bounds.left + bounds.right) / 2;
@@ -256,6 +264,7 @@ export class HoldOverlay {
     this.rotationHandles.style.top = `${centerY}px`;
   }
 
+  /** Restituisce il centro di rotazione in coordinate client per calcolare il delta angolare. */
   private rotationCenter(): { x: number; y: number } {
     const bounds = this.container.getBoundingClientRect();
     return {
@@ -264,6 +273,7 @@ export class HoldOverlay {
     };
   }
 
+  /** Conclude il gesto lineare, applicando il click/commit richiesto oppure annullando la preview. */
   private finishMove(commit: boolean): void {
     if (!this.movePointer) return;
     const pointer = this.movePointer;
@@ -280,6 +290,7 @@ export class HoldOverlay {
     }
   }
 
+  /** Rilascia pointer capture e frame pendenti della rotazione, con rollback quando richiesto. */
   private finishRotation(cancel = true): void {
     if (this.rotationPointer) {
       const wasDragging = this.rotationPointer.dragged;
@@ -294,6 +305,7 @@ export class HoldOverlay {
     this.pendingRotationPoint = null;
   }
 
+  /** Disegna l'indicatore DOM dalla presa al punto richiesto senza partecipare al picking 3D. */
   private updateDragIndicator(snapshot: InteractionSnapshot): void {
     const preview = snapshot.dragPreview;
     this.dragIndicator.hidden = !preview || snapshot.exporting;
@@ -309,20 +321,24 @@ export class HoldOverlay {
     this.dragIndicator.textContent = preview.angleDegrees === null ? '' : `${Math.round(preview.angleDegrees)}°`;
   }
 
+  /** Converte un PointerEvent in coordinate CSS relative alla viewport della scena. */
   private viewportPoint(event: PointerEvent): { x: number; y: number } {
     return this.viewportPointFromClient(event.clientX, event.clientY);
   }
 
+  /** Converte coordinate client assolute in coordinate locali della viewport. */
   private viewportPointFromClient(clientX: number, clientY: number): { x: number; y: number } {
     const bounds = this.container.getBoundingClientRect();
     return { x: clientX - bounds.left, y: clientY - bounds.top };
   }
 
+  /** Propaga alla UI il risultato strutturato restituito da un comando scena. */
   private report(result: SceneActionResult): void {
     this.actions.feedback(result);
   }
 }
 
+/** Recupera un elemento obbligatorio dell'overlay e fallisce subito se il markup e incompleto. */
 function required<T extends Element>(root: ParentNode, selector: string): T {
   const element = root.querySelector<T>(selector);
   if (!element) throw new Error(`Overlay incompleto: ${selector}`);

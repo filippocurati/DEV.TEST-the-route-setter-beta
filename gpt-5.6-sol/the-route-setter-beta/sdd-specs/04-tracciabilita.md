@@ -38,6 +38,6 @@
 | DEC-011..022 | 02 §7.1, §7.6..7.9, §8.1..8.4, §9, 03 FASE 9UX | Test report 9UX-bis: report preservato, shadow runtime per targeting/drag, endpoint-only, drag libero/vincolato, verso rotazione, camera congelata, export disabilitato, popup compatto, dettagli condivisi ed Escape con deselezione |
 | REQ-DEP-001..003 | 02 §12 | Restore/build deterministico in CI |
 | REQ-DEP-004 | 02 §12, 03 FASE 0 | Dependency baseline verification |
-| REQ-DOC-001..005 | 03 FASE 12 | Document verification checklist |
+| REQ-DOC-001..005 | 03 FASE 12 | `docs/applicazione.md`, `docs/test-automatici.md`, `docs/checklist-fase-12.md` e `npm run test:docs` |
 
 Regola: ogni nuova modifica deve aggiornare questa matrice quando impatta requisiti o test.

@@ -60,6 +60,7 @@ export function addTwistAroundNormal(
   return new Quaternion().setFromAxisAngle(normal, deltaRadians).multiply(current).normalize();
 }
 
+/** Accetta soltanto normali finite e con modulo sufficiente alla normalizzazione. */
 function isValidNormal(normal: Vector3): boolean {
   return Number.isFinite(normal.x)
     && Number.isFinite(normal.y)

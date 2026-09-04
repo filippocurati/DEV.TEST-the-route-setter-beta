@@ -17,7 +17,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test",
     "test:traceability": "node ../scripts/check-test-traceability.mjs",
-    "test:ci": "npm run build && npm run test:traceability && npm run test:unit:ci && npm run test:e2e:ci",
+    "test:docs": "node ../scripts/check-documentation.mjs",
+    "test:ci": "npm run build && npm run test:traceability && npm run test:docs && npm run test:unit:ci && npm run test:e2e:ci",
     "test:performance": "npm run build && playwright test --config=playwright.performance.config.ts"
   },
   "dependencies": {

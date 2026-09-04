@@ -2,7 +2,7 @@
 
 ## Vincoli in sviluppo fase
 
-Leggi integralmente: Istruzioni.md, Istructions.md e tutti i file in sdd-spec.
+Leggi integralmente `sdd_istructions.md` e tutti i file in `sdd-specs`.
 Implementa SOLO la fase che ti viene comunicata inerente al sdd-specs/03-piano-implementazione.md, senza anticipare fasi successive.
 Rispetta 00-costituzione.md e 01-specifica-requisiti.md.
 
