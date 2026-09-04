@@ -9,6 +9,7 @@ const matrixPath = resolve(projectRoot, 'sdd-specs/04-tracciabilita.md');
 const manifestPath = resolve(sourceRoot, 'test-traceability.json');
 const phaseRequirements = [1, 2, 3, 4, 5, 6, 7, 9, 10].map((number) => `REQ-TST-${String(number).padStart(3, '0')}`);
 const performanceRequirements = [1, 2, 3, 4, 5, 6].map((number) => `REQ-PRF-${String(number).padStart(3, '0')}`);
+const documentationRequirements = [1, 2, 3, 4, 5].map((number) => `REQ-DOC-${String(number).padStart(3, '0')}`);
 
 const [requirements, matrix, manifestText] = await Promise.all([
   readFile(requirementsPath, 'utf8'),
@@ -23,7 +24,7 @@ const errors = [];
 for (const requirement of declared) {
   if (!traced.has(requirement)) errors.push(`${requirement} non compare nella matrice di tracciabilita.`);
 }
-for (const requirement of [...phaseRequirements, ...performanceRequirements]) {
+for (const requirement of [...phaseRequirements, ...performanceRequirements, ...documentationRequirements]) {
   const evidence = manifest[requirement];
   if (!Array.isArray(evidence) || evidence.length === 0) {
     errors.push(`${requirement} non ha evidenze automatiche.`);
@@ -45,7 +46,7 @@ if (errors.length > 0) {
   console.error(errors.join('\n'));
   process.exitCode = 1;
 } else {
-  console.log(`${declared.length} requisiti presenti nella matrice; ${phaseRequirements.length} requisiti FASE 10 e ${performanceRequirements.length} requisiti FASE 11 collegati a evidenze esistenti.`);
+  console.log(`${declared.length} requisiti presenti nella matrice; evidenze presenti per ${phaseRequirements.length} requisiti FASE 10, ${performanceRequirements.length} FASE 11 e ${documentationRequirements.length} FASE 12.`);
 }
 
 function expandRequirementReferences(markdown) {

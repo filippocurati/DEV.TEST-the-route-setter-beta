@@ -142,6 +142,7 @@ export function selectDominantSurface(
     || left.stableId.localeCompare(right.stableId))[0] ?? null;
 }
 
+/** Limita il diametro screen-space del footprint per garantire campioni leggibili e stabili. */
 export function clampTargetDiameter(diameter: number): number {
   return Math.min(TARGET_MAX_DIAMETER_PX, Math.max(TARGET_MIN_DIAMETER_PX, diameter));
 }
@@ -161,6 +162,7 @@ export function quantizeRotationDelta(
   return { steps, residual: total - steps * oneDegree };
 }
 
+/** Verifica che una normale candidata non contenga componenti non finite. */
 function isFiniteVector(vector: Vector3): boolean {
   return Number.isFinite(vector.x) && Number.isFinite(vector.y) && Number.isFinite(vector.z);
 }

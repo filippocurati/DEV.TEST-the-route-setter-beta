@@ -62,6 +62,8 @@ jobs:
         run: npm run build
       - name: Check requirement traceability
         run: npm run test:traceability
+      - name: Check documentation
+        run: npm run test:docs
       - name: Test frontend
         run: npm run test:unit:ci
       - name: Test end to end

@@ -1475,6 +1475,7 @@ function createShadow(source: Group, color = 0xffd436): Group {
   return shadow;
 }
 
+/** Aggiorna il colore dei soli materiali preview clonati appartenenti alla shadow. */
 function setShadowColor(shadow: Group, color: number): void {
   shadow.traverse((object) => {
     if (!(object instanceof Mesh)) return;
@@ -1495,6 +1496,7 @@ function disposeShadow(shadow: Group): void {
   shadow.removeFromParent();
 }
 
+/** Proietta un punto world in coordinate CSS relative al canvas corrente. */
 function projectWorldPoint(point: Vector3, camera: PerspectiveCamera, canvas: HTMLCanvasElement): ViewportPoint {
   const projected = point.clone().project(camera);
   return {
@@ -1523,6 +1525,7 @@ function computeBaseFootprint(vertices: readonly number[]): Vector3[] {
   return points;
 }
 
+/** Ricava dal footprint locale il diametro fisico usato per il campionamento di aggancio. */
 function computeBaseDiameter(points: readonly Vector3[]): number {
   const bounds = new Box3();
   points.forEach((point) => bounds.expandByPoint(new Vector3(point.x, point.y, 0)));
@@ -1550,6 +1553,7 @@ function projectObjectBounds(object: Object3D, camera: PerspectiveCamera, canvas
   };
 }
 
+/** Espande un bounding box nei suoi otto vertici per la successiva proiezione a schermo. */
 function boxCorners(bounds: Box3): Vector3[] {
   return [bounds.min.x, bounds.max.x].flatMap((x) =>
     [bounds.min.y, bounds.max.y].flatMap((y) =>

@@ -21,9 +21,8 @@ Le specifiche SDD risultano coerenti con i vincoli principali richiesti:
 
 ## 1) Struttura del pacchetto sdd-specs
 
-### `sdd-specs/README.md`
-Scopo del pacchetto e ordine di lettura.
-Definisce la regola d'uso: i vincoli sono obbligatori, gli OPEN sono guidati.
+### `sdd_istructions.md`
+Scopo del pacchetto e ordine di lettura. Definisce la regola d'uso: i vincoli sono obbligatori, gli OPEN sono guidati.
 
 ### `sdd-specs/00-costituzione.md`
 Principi non negoziabili trasversali al progetto.
