@@ -1,0 +1,73 @@
+{
+  "scenario": "phase-11-40-holds",
+  "measuredAt": "2026-09-04",
+  "measuredDurationMs": 60150.4,
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 1
+  },
+  "scene": {
+    "holds": 40,
+    "rigidBodies": 41,
+    "colliders": 41
+  },
+  "canvas": {
+    "css": [1616, 1004.325],
+    "drawingBuffer": [1616, 1004]
+  },
+  "rendering": {
+    "frames": 3611,
+    "medianFps": 60,
+    "meanFps": 60.0333,
+    "minimumFps": 60,
+    "p95RenderDurationMs": 0.6,
+    "renderCallsPerFrame": 41,
+    "trianglesPerFrame": 2285242,
+    "geometries": 3,
+    "textures": 0
+  },
+  "interactionResponsiveness": {
+    "longTaskCount": 0,
+    "maxLongTaskMs": 0,
+    "maxHeartbeatDelayMs": 40.4,
+    "p95HeartbeatDelayMs": 1
+  },
+  "loadingResponsiveness": {
+    "longTaskCount": 2,
+    "maxLongTaskMs": 80,
+    "maxHeartbeatDelayMs": 190.6,
+    "p95HeartbeatDelayMs": 25.7,
+    "holdLoadP50Ms": 219.1122,
+    "holdLoadP95Ms": 503.2069,
+    "holdLoadMaxMs": 515.6945
+  },
+  "attachmentResponsiveness": {
+    "longTaskCount": 0,
+    "maxLongTaskMs": 0,
+    "maxHeartbeatDelayMs": 12.1
+  },
+  "endpointLatency": {
+    "count": 1,
+    "p50Ms": 2.8,
+    "maxMs": 2.8
+  },
+  "webgl": {
+    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+    "vendor": "Google Inc. (Intel)",
+    "renderer": "ANGLE (Intel, Intel(R) Graphics (0x00007DD5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+  },
+  "hardware": {
+    "computer": "HP ProBook 460 16 inch G11 Notebook PC",
+    "cpu": "Intel(R) Core(TM) Ultra 7 155H",
+    "cpuCores": 16,
+    "logicalProcessors": 22,
+    "ramBytes": 16613027840,
+    "integratedGpu": "Intel(R) Graphics",
+    "integratedGpuDriver": "32.0.101.8508"
+  },
+  "browser": "Chromium Playwright 1.44.0",
+  "mode": "headed",
+  "pageErrors": [],
+  "passed": true
+}

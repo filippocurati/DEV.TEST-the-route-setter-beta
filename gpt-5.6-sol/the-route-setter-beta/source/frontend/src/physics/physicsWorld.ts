@@ -165,19 +165,27 @@ export class PhysicsWorld {
     outwardNormal?: RAPIER.Vector,
   ): PoseValidation {
     this.ensureActive();
+    this.world.updateSceneQueries();
     if (outwardNormal) {
       const length = Math.hypot(outwardNormal.x, outwardNormal.y, outwardNormal.z);
       const offset = length > 0 ? MAX_PENETRATION_METERS / length : 0;
-      const wallIntersects = object.collider.shape.intersectsShape(
+      let wallIntersects = false;
+      this.world.intersectionsWithShape(
         {
           x: translation.x + outwardNormal.x * offset,
           y: translation.y + outwardNormal.y * offset,
           z: translation.z + outwardNormal.z * offset,
         },
         rotation,
-        this.wallCollider.shape,
-        this.wallCollider.translation(),
-        this.wallCollider.rotation(),
+        object.collider.shape,
+        (candidate) => {
+          if (candidate.handle !== this.wallCollider.handle) return true;
+          wallIntersects = true;
+          return false;
+        },
+        undefined,
+        undefined,
+        object.collider,
       );
       if (wallIntersects) return { valid: false, blocker: 'wall' };
     } else {
@@ -194,8 +202,8 @@ export class PhysicsWorld {
       }
     }
     let blocker: PoseValidation['blocker'] = null;
-    this.world.forEachCollider((candidate) => {
-      if (blocker || candidate.handle === object.collider.handle || candidate.handle === this.wallCollider.handle) return;
+    this.world.intersectionsWithShape(translation, rotation, object.collider.shape, (candidate) => {
+      if (candidate.handle === this.wallCollider.handle) return true;
       const contact = object.collider.shape.contactShape(
         translation,
         rotation,
@@ -206,8 +214,10 @@ export class PhysicsWorld {
       );
       if (contact && contact.distance < -MAX_PENETRATION_METERS) {
         blocker = 'hold';
+        return false;
       }
-    });
+      return true;
+    }, undefined, undefined, object.collider);
     return { valid: blocker === null, blocker };
   }
 

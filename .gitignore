@@ -289,6 +289,7 @@ FakesAssemblies/
 node_modules/
 playwright-report/
 test-results/
+performance-results/
 
 # Visual Studio 6 build log
 *.plg

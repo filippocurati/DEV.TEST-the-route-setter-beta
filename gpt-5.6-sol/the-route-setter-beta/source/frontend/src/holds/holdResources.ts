@@ -10,24 +10,50 @@ export interface HoldModelResource {
   dispose(): void;
 }
 
+interface CachedModel {
+  readonly template: Group;
+  references: number;
+}
+
+const modelCache = new Map<string, Promise<CachedModel>>();
+
 /** Carica on-demand un GLB e crea la risorsa modello del catalogo. */
 export async function loadHoldModel(definition: HoldManifest): Promise<HoldModelResource> {
-  const bytes = await fetchBinaryAsset(definition.modelUrl);
-  const assetBaseUrl = `/api/holds/${encodeURIComponent(definition.id)}/assets/`;
-  const gltf = await new GLTFLoader().parseAsync(bytes, assetBaseUrl);
-  const template = gltf.scene;
-  template.name = `${definition.id}:model`;
+  let cachedPromise = modelCache.get(definition.modelUrl);
+  if (!cachedPromise) {
+    cachedPromise = fetchBinaryAsset(definition.modelUrl).then(async (bytes) => {
+      const modelUrl = new URL(definition.modelUrl, window.location.href);
+      const assetBaseUrl = `${modelUrl.pathname.slice(0, modelUrl.pathname.lastIndexOf('/') + 1)}assets/`;
+      const gltf = await new GLTFLoader().parseAsync(bytes, assetBaseUrl);
+      return { template: gltf.scene, references: 0 };
+    }).catch((error) => {
+      modelCache.delete(definition.modelUrl);
+      throw error;
+    });
+    modelCache.set(definition.modelUrl, cachedPromise);
+  }
+  const cached = await cachedPromise;
+  cached.references += 1;
+  let disposed = false;
 
   return {
     definition,
-    template,
+    template: cached.template,
     createInstance: () => {
-      const instance = template.clone(true);
+      const instance = cached.template.clone(true);
       instance.name = `${definition.id}:instance`;
       instance.userData.holdModelId = definition.id;
       return instance;
     },
-    dispose: () => disposeObject3D(template),
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      cached.references -= 1;
+      if (cached.references === 0) {
+        modelCache.delete(definition.modelUrl);
+        disposeObject3D(cached.template);
+      }
+    },
   };
 }
 

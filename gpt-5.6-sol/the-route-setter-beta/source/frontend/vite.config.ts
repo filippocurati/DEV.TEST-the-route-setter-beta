@@ -14,5 +14,11 @@ export default defineConfig(() => {
         '/api': `http://127.0.0.1:${backendPort}`,
       },
     },
+    preview: {
+      port: frontendPort,
+      proxy: {
+        '/api': `http://127.0.0.1:${backendPort}`,
+      },
+    },
   };
 });

@@ -85,7 +85,11 @@ async function bootstrap(): Promise<void> {
               return;
             }
             feedback.textContent = `Caricamento ${hold.id}...`;
-            await renderCatalog();
+            list.querySelector<HTMLElement>(`[data-hold-id="${CSS.escape(hold.id)}"]`)?.remove();
+            count.textContent = String(Math.max(0, Number(count.textContent) - 1));
+            if (Number(count.textContent) === 0) {
+              list.innerHTML = '<p class="catalog-empty">Tutte le prese sono in scena.</p>';
+            }
             try {
               await scene.addHold(hold);
               feedback.textContent = `${hold.id} aggiunta alla scena.`;

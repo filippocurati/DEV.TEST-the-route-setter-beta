@@ -22,7 +22,7 @@
 | REQ-UX-006..009 | 02 §7.6..7.9, §8.3..8.5 | Unit pointer/preview math + E2E shadow mouse desktop |
 | REQ-UX-010 | 02 §8.2 | Unit result contract + E2E feedback |
 | REQ-IMG-001..004 | 02 §9 | E2E equivalenza vista corrente + esclusione shadow/overlay + export JPG |
-| REQ-PRF-001..006 | 02 §11 | Benchmark scena + preview drag + latenza commit endpoint |
+| REQ-PRF-001..006 | 02 §11, 03 FASE 11 | `tests/performance/phase11.spec.ts` + `Phase_11_performance_results.json`: 40 hold, 1920x1080, 60 s, FPS, long task, heartbeat e latenza endpoint |
 | REQ-ERR-001..005 | 02 §10 | Error tests backend/frontend |
 | REQ-LOG-001..007 | 02 §10 | Logging structure/sanitization/rotation tests |
 | REQ-TST-001 | 03 FASE 10 | `.github/workflows/ci.yml`: ogni comando mantiene il proprio exit code bloccante |

@@ -20,7 +20,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { fetchHoldCollider, type HoldManifest } from '../api/holdApi';
+import { fetchHoldCollider, type HoldColliderDocument, type HoldManifest } from '../api/holdApi';
 import { generateGuideImage, type CameraSnapshot, type GuideImageResult } from '../export/guideImage';
 import { loadHoldModel, type HoldModelResource } from '../holds/holdResources';
 import { ROTATION_STEP_RADIANS, TRANSLATION_STEP_METERS } from '../input/holdCommands';
@@ -52,7 +52,6 @@ import {
 import { loadWall } from './wallLoader';
 import {
   createSpawnCandidateOffsets,
-  findFirstAvailableSpawn,
   SPAWN_GRID_MARGIN_METERS,
   SPAWN_GRID_STEP_METERS,
 } from './spawnCandidates';
@@ -110,6 +109,31 @@ export interface WallSceneDebug {
   readonly dragCandidatePosition: readonly number[] | null;
   readonly targetNormal: readonly number[] | null;
   readonly poseValidationCount: number;
+}
+
+export interface PerformanceSnapshot {
+  readonly active: boolean;
+  readonly startedAt: number | null;
+  readonly stoppedAt: number | null;
+  readonly renderTimestamps: readonly number[];
+  readonly renderDurations: readonly number[];
+  readonly endpointDurations: readonly number[];
+  readonly renderCalls: number;
+  readonly triangles: number;
+  readonly geometries: number;
+  readonly textures: number;
+  readonly canvasCssSize: readonly [number, number];
+  readonly drawingBufferSize: readonly [number, number];
+  readonly webglVersion: string;
+  readonly webglVendor: string;
+  readonly webglRenderer: string;
+}
+
+export interface PerformanceController {
+  start(): void;
+  selectHold(id: string): boolean;
+  stop(): PerformanceSnapshot;
+  snapshot(): PerformanceSnapshot;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
@@ -192,6 +216,7 @@ interface TransformDragSession {
 declare global {
   interface Window {
     __ROUTE_SETTER_SCENE__?: WallSceneDebug;
+    __ROUTE_SETTER_PERFORMANCE__?: PerformanceController;
   }
 }
 
@@ -215,6 +240,15 @@ export async function createWallScene(
   renderer.domElement.tabIndex = 0;
   renderer.domElement.dataset.sceneCanvas = 'true';
   container.append(renderer.domElement);
+  const performanceEnabled = new URLSearchParams(window.location.search).get('performance') === '1';
+  let performanceActive = false;
+  let performanceStartedAt: number | null = null;
+  let performanceStoppedAt: number | null = null;
+  let renderTimestamps: number[] = [];
+  let renderDurations: number[] = [];
+  let endpointDurations: number[] = [];
+  let performanceCameraPosition: Vector3 | null = null;
+  let performanceFrame: number | null = null;
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;
@@ -231,9 +265,16 @@ export async function createWallScene(
   const wall = await loadWall();
   scene.add(wall.object);
   const frontReference = findFrontReference(wall.object, wall.center, wall.bounds);
+  const spawnCandidates = createSpawnCandidateOffsets({
+    halfWidth: wall.size.x / 2,
+    halfHeight: wall.size.y / 2,
+    step: SPAWN_GRID_STEP_METERS,
+    margin: SPAWN_GRID_MARGIN_METERS,
+  });
   status.textContent = 'Inizializzazione fisica...';
   const physics = await PhysicsWorld.create(wall.triMesh);
   const holdInstances = new Map<string, HoldSceneInstance>();
+  const colliderDocuments = new Map<string, Promise<HoldColliderDocument>>();
   const interactionListeners = new Set<(snapshot: InteractionSnapshot) => void>();
   const raycaster = new Raycaster();
   const targetSamples = createTargetSamples();
@@ -366,11 +407,84 @@ export async function createWallScene(
     if (renderPending) return;
     renderPending = true;
     requestAnimationFrame(() => {
+      const renderStartedAt = performance.now();
       renderer.render(scene, camera);
+      if (performanceActive) {
+        renderTimestamps.push(renderStartedAt);
+        renderDurations.push(performance.now() - renderStartedAt);
+      }
       renderPending = false;
       notifyInteraction();
     });
   };
+  if (performanceEnabled) {
+    const performanceSnapshot = (): PerformanceSnapshot => {
+      const context = renderer.getContext();
+      const debugInfo = context.getExtension('WEBGL_debug_renderer_info');
+      const bounds = renderer.domElement.getBoundingClientRect();
+      return {
+        active: performanceActive,
+        startedAt: performanceStartedAt,
+        stoppedAt: performanceStoppedAt,
+        renderTimestamps: [...renderTimestamps],
+        renderDurations: [...renderDurations],
+        endpointDurations: [...endpointDurations],
+        renderCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        canvasCssSize: [bounds.width, bounds.height],
+        drawingBufferSize: [renderer.domElement.width, renderer.domElement.height],
+        webglVersion: String(context.getParameter(context.VERSION)),
+        webglVendor: String(context.getParameter(debugInfo?.UNMASKED_VENDOR_WEBGL ?? context.VENDOR)),
+        webglRenderer: String(context.getParameter(debugInfo?.UNMASKED_RENDERER_WEBGL ?? context.RENDERER)),
+      };
+    };
+    window.__ROUTE_SETTER_PERFORMANCE__ = {
+      start: () => {
+        renderTimestamps = [];
+        renderDurations = [];
+        endpointDurations = [];
+        performanceStartedAt = performance.now();
+        performanceStoppedAt = null;
+        performanceCameraPosition = camera.position.clone();
+        performanceActive = true;
+        const benchmarkFrame = (now: number): void => {
+          if (!performanceActive || !performanceCameraPosition || performanceStartedAt === null) return;
+          const offset = performanceCameraPosition.clone().sub(controls.target);
+          offset.applyAxisAngle(new Vector3(0, 1, 0), Math.sin((now - performanceStartedAt) / 2_000) * 0.08);
+          camera.position.copy(controls.target).add(offset);
+          camera.lookAt(controls.target);
+          const renderStartedAt = performance.now();
+          renderer.render(scene, camera);
+          renderTimestamps.push(renderStartedAt);
+          renderDurations.push(performance.now() - renderStartedAt);
+          performanceFrame = requestAnimationFrame(benchmarkFrame);
+        };
+        performanceFrame = requestAnimationFrame(benchmarkFrame);
+      },
+      selectHold: (id) => {
+        if (!holdInstances.has(id)) return false;
+        setSelection(id);
+        render();
+        return true;
+      },
+      stop: () => {
+        performanceActive = false;
+        if (performanceFrame !== null) cancelAnimationFrame(performanceFrame);
+        performanceFrame = null;
+        performanceStoppedAt = performance.now();
+        if (performanceCameraPosition) {
+          camera.position.copy(performanceCameraPosition);
+          camera.lookAt(controls.target);
+          performanceCameraPosition = null;
+          render();
+        }
+        return performanceSnapshot();
+      },
+      snapshot: performanceSnapshot,
+    };
+  }
   controls.addEventListener('change', render);
   updateDebugState();
 
@@ -798,6 +912,7 @@ export async function createWallScene(
   }
 
   function commitMoveDrag(pointerId: number): SceneActionResult {
+    const startedAt = performance.now();
     const session = dragSession;
     const instance = selectedInstance();
     if (!session || session.kind !== 'move' || session.pointerId !== pointerId || !instance) {
@@ -823,6 +938,7 @@ export async function createWallScene(
     );
     finishDragSession();
     render();
+    if (performanceActive) endpointDurations.push(performance.now() - startedAt);
     return outcome;
   }
 
@@ -860,6 +976,7 @@ export async function createWallScene(
   }
 
   function commitRotationDrag(pointerId: number): SceneActionResult {
+    const startedAt = performance.now();
     const session = dragSession;
     const instance = selectedInstance();
     if (!session || session.kind !== 'rotate' || session.pointerId !== pointerId || !instance) {
@@ -879,6 +996,7 @@ export async function createWallScene(
     const outcome = result(valid ? 'committed' : 'invalid-endpoint', valid ? 'Rotazione applicata.' : 'Rotazione non valida. Operazione annullata.');
     finishDragSession();
     render();
+    if (performanceActive) endpointDurations.push(performance.now() - startedAt);
     return outcome;
   }
 
@@ -1112,6 +1230,18 @@ export async function createWallScene(
     return physics.validatePose(instance.physics, translation, rotation, outwardNormal);
   }
 
+  function loadCollider(url: string): Promise<HoldColliderDocument> {
+    let pending = colliderDocuments.get(url);
+    if (!pending) {
+      pending = fetchHoldCollider(url).catch((error) => {
+        colliderDocuments.delete(url);
+        throw error;
+      });
+      colliderDocuments.set(url, pending);
+    }
+    return pending;
+  }
+
   return {
     addHold: async (hold) => {
       if (holdInstances.has(hold.id)) {
@@ -1124,7 +1254,7 @@ export async function createWallScene(
       const model = await loadHoldModel(hold);
       let stagedObject: Group | undefined;
       try {
-        const colliderDocument = await fetchHoldCollider(hold.colliderUrl);
+        const colliderDocument = await loadCollider(hold.colliderUrl);
         const baseFootprint = computeBaseFootprint(colliderDocument.vertices);
         const baseDiameterMeters = computeBaseDiameter(baseFootprint);
         const collider = RAPIER.ColliderDesc.convexMesh(
@@ -1145,14 +1275,8 @@ export async function createWallScene(
           centralSpawn,
           new Quaternion(),
         );
-        const candidates = createSpawnCandidateOffsets({
-          halfWidth: wall.size.x / 2,
-          halfHeight: wall.size.y / 2,
-          step: SPAWN_GRID_STEP_METERS,
-          margin: SPAWN_GRID_MARGIN_METERS,
-        });
         let insertionPosition: Vector3 | undefined;
-        const spawnResult = findFirstAvailableSpawn(candidates, (candidateOffset) => {
+        const spawnResult = await findFirstAvailableSpawnCooperatively(spawnCandidates, (candidateOffset) => {
           const candidate = centralSpawn.clone().add(new Vector3(candidateOffset.x, candidateOffset.y, 0));
           physics.setKinematicTransform(physicsObject, candidate, physicsObject.body.rotation());
           if (!physics.hasIntersections(physicsObject)) {
@@ -1311,6 +1435,22 @@ export async function createWallScene(
       }
     },
   };
+}
+
+/** Conserva l'ordine deterministico della griglia cedendo periodicamente il main thread. */
+async function findFirstAvailableSpawnCooperatively<T>(
+  candidates: readonly T[],
+  isAvailable: (candidate: T, index: number) => boolean,
+): Promise<{ readonly candidate: T; readonly index: number } | null> {
+  let sliceStartedAt = performance.now();
+  for (let index = 0; index < candidates.length; index += 1) {
+    if (isAvailable(candidates[index], index)) return { candidate: candidates[index], index };
+    if (performance.now() - sliceStartedAt >= 16) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      sliceStartedAt = performance.now();
+    }
+  }
+  return null;
 }
 
 /** Crea una copia grafica trasparente condividendo geometrie e texture. */

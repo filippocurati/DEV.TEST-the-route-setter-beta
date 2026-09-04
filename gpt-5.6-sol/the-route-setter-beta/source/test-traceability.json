@@ -1,4 +1,10 @@
 {
+  "REQ-PRF-001": ["frontend/tests/performance/phase11.spec.ts", "../phases-outcome/Phase_11_performance_results.json"],
+  "REQ-PRF-002": ["frontend/tests/performance/phase11.spec.ts", "../phases-outcome/Phase_11_performance_results.json"],
+  "REQ-PRF-003": ["frontend/tests/performance/phase11.spec.ts", "../phases-outcome/Phase_11_performance_results.json"],
+  "REQ-PRF-004": ["frontend/tests/performance/phase11.spec.ts", "../phases-outcome/Phase_11_performance_results.json"],
+  "REQ-PRF-005": ["frontend/tests/performance/phase11.spec.ts", "../phases-outcome/Phase_11_performance_results.json"],
+  "REQ-PRF-006": ["frontend/tests/performance/phase11.spec.ts", "frontend/playwright.performance.config.ts", "../phases-outcome/Phase_11_performance_results.json"],
   "REQ-TST-001": ["../../../.github/workflows/ci.yml"],
   "REQ-TST-002": ["backend/tests/TheRouteSetter.Api.Tests/TheRouteSetter.Api.Tests.csproj"],
   "REQ-TST-003": ["backend/tests/TheRouteSetter.Api.Tests/ColliderProcessorTests.cs"],

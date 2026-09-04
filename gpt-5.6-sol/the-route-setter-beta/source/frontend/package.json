@@ -10,13 +10,15 @@
   },
   "scripts": {
     "dev": "vite",
+    "preview": "vite preview",
     "build": "tsc && vite build",
     "test": "vitest run",
     "test:unit:ci": "vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/vitest-junit.xml",
     "test:e2e": "playwright test",
     "test:e2e:ci": "playwright test",
     "test:traceability": "node ../scripts/check-test-traceability.mjs",
-    "test:ci": "npm run build && npm run test:traceability && npm run test:unit:ci && npm run test:e2e:ci"
+    "test:ci": "npm run build && npm run test:traceability && npm run test:unit:ci && npm run test:e2e:ci",
+    "test:performance": "npm run build && playwright test --config=playwright.performance.config.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.12.0",

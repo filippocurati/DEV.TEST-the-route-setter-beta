@@ -433,6 +433,8 @@ Metodo vincolante:
 - target pass: mediana FPS >= 30;
 - risultato documentato nei report test/performance.
 
+Il benchmark usa una build frontend di produzione e Chromium headed con `deviceScaleFactor=1`. I 40 identificatori della fixture riutilizzano gli asset reali disponibili, ma ciascuno crea una distinta istanza Three.js, un rigid body e un collider. Gli FPS sono calcolati sui render Three.js effettivi in finestre da un secondo. Long Tasks API e heartbeat misurano separatamente caricamento e interazione; il gate di blocco e nessun long task oltre 200 ms. La latenza endpoint include validazione e commit della transazione. Il risultato JSON registra anche canvas, renderer WebGL e profilo hardware.
+
 ## 12. Gestione versioni dipendenze
 
 - npm: usare versioni esatte e lockfile versionato.
