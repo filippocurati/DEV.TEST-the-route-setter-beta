@@ -60,6 +60,30 @@ export function addTwistAroundNormal(
   return new Quaternion().setFromAxisAngle(normal, deltaRadians).multiply(current).normalize();
 }
 
+/** Trasporta l'orientamento sulla nuova normale usando la rotazione minima fra le due superfici. */
+export function transportOrientationToNormal(
+  orientation: Quaternion,
+  fromNormal: Vector3,
+  toNormal: Vector3,
+): Quaternion {
+  const source = resolveContactNormal(fromNormal, null);
+  const target = resolveContactNormal(toNormal, source);
+  const transport = new Quaternion().setFromUnitVectors(source, target);
+  return transport.multiply(orientation).normalize();
+}
+
+/** Ricava il twist firmato dell'orientamento rispetto all'allineamento canonico sulla normale. */
+export function twistFromOrientation(orientation: Quaternion, normal: Vector3): number {
+  const normalized = resolveContactNormal(normal, null);
+  const alignment = orientationFromNormal(normalized);
+  const relative = orientation.clone().multiply(alignment.invert()).normalize();
+  const signedSin = relative.x * normalized.x + relative.y * normalized.y + relative.z * normalized.z;
+  let angle = 2 * Math.atan2(signedSin, relative.w);
+  while (angle > Math.PI) angle -= Math.PI * 2;
+  while (angle < -Math.PI) angle += Math.PI * 2;
+  return angle;
+}
+
 /** Accetta soltanto normali finite e con modulo sufficiente alla normalizzazione. */
 function isValidNormal(normal: Vector3): boolean {
   return Number.isFinite(normal.x)

@@ -19,6 +19,7 @@ export interface SurfaceSampleHit {
   readonly normal: Vector3;
   readonly cameraDistance: number;
   readonly stableId: string;
+  readonly featureId: number;
   readonly screenDistanceSquared: number;
 }
 
@@ -29,6 +30,7 @@ export interface DominantSurface {
   readonly containsCenter: boolean;
   readonly cameraDistance: number;
   readonly stableId: string;
+  readonly featureId: number;
 }
 
 /** Genera centro e tre anelli deterministici da 6, 12 e 18 campioni. */
@@ -122,22 +124,26 @@ export function selectDominantSurface(
     else clusters.set(root, [hit]);
   });
   const ranked = [...clusters.values()].map((members) => {
-    const normal = members.reduce((sum, hit) => sum.add(hit.normal), new Vector3());
-    if (!isFiniteVector(normal) || normal.lengthSq() < 1e-16) return null;
     const pointHit = [...members].sort((left, right) =>
       left.screenDistanceSquared - right.screenDistanceSquared || left.sampleIndex - right.sampleIndex)[0];
+    const localMembers = members.filter((hit) => hit.normal.angleTo(pointHit.normal) <= MAX_NORMAL_ANGLE_RADIANS);
+    const normal = localMembers.reduce((sum, hit) => sum.add(hit.normal), new Vector3());
+    if (!isFiniteVector(normal) || normal.lengthSq() < 1e-16) return null;
+    normal.normalize();
+    if (normal.angleTo(pointHit.normal) > MAX_NORMAL_ANGLE_RADIANS) normal.copy(pointHit.normal).normalize();
     return {
       point: pointHit.point.clone(),
-      normal: normal.normalize(),
+      normal,
       hitCount: members.length,
       containsCenter: members.some((hit) => hit.sampleIndex === 0),
       cameraDistance: Math.min(...members.map((hit) => hit.cameraDistance)),
       stableId: [...members.map((hit) => hit.stableId)].sort()[0],
+      featureId: pointHit.featureId,
     } satisfies DominantSurface;
   }).filter((cluster): cluster is DominantSurface => cluster !== null);
   return ranked.sort((left, right) =>
-    right.hitCount - left.hitCount
-    || Number(right.containsCenter) - Number(left.containsCenter)
+    Number(right.containsCenter) - Number(left.containsCenter)
+    || right.hitCount - left.hitCount
     || left.cameraDistance - right.cameraDistance
     || left.stableId.localeCompare(right.stableId))[0] ?? null;
 }

@@ -183,13 +183,11 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 **REQ-FIS-014 - Target e degeneri deterministici.**
 - Criteri: normali finite; raggruppamento e tie-break deterministici; target privo di hit non agganciabile; posa invalida non modifica la hold.
 
-**REQ-FIS-015 - Vincolo alla superficie di aggancio.**
+**REQ-FIS-015 - Vincolo dei click incrementali alla superficie di aggancio.**
 - Al momento dell'aggancio viene memorizzata la normale stabilizzata di aggancio.
-- Durante `Sposta` la hold puo seguire piccole variazioni locali pur restando aderente, ma la normale candidata deve rimanere entro `5 gradi` dalla normale di aggancio.
-- Durante il drag la shadow viene proiettata incrementalmente sulla parete e resta aderente; non vengono eseguite collision query.
-- Un diedro, spigolo, prominenza, gap o cambio di inclinazione oltre soglia arresta la shadow all'ultimo candidato geometricamente ammissibile.
-- Al rilascio la normale endpoint viene nuovamente verificata rispetto alla normale di aggancio.
-- Criteri: nessuna transizione automatica fra superfici; per cambiare superficie sono necessari `Sgancia` e un nuovo `Aggancia`.
+- Durante i click da `1 cm` la hold puo seguire piccole variazioni locali pur restando aderente, ma la normale candidata deve rimanere entro `5 gradi` dalla normale di aggancio.
+- Un diedro, spigolo, prominenza, gap o cambio di inclinazione oltre soglia arresta il click all'ultima posa valida.
+- Il drag transazionale e escluso dal surface-lock iniziale e puo scegliere qualsiasi superficie visibile del modello.
 
 ## HUL - Convex Hull backend
 
@@ -267,15 +265,15 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Al click il footprint invisibile usa `37` campioni deterministici: centro e tre anelli rispettivamente da `6`, `12`, `18` punti.
 - Ogni campione ha peso unitario ed esegue un raycast camera verso il primo triangolo visibile della parete.
 - Gli hit di campioni adiacenti nel pattern vengono raggruppati se la distanza world e inferiore o uguale al diametro fisico della base e la differenza delle normali e entro `5 gradi`; la chiusura transitiva definisce il gruppo.
-- Non esiste copertura minima: vince il gruppo con maggior peso fra i soli campioni validi.
+- Se il campione centrale e valido, vince il gruppo che lo contiene per mantenere coerenti shadow visibile e posa finale; se il centro non colpisce la parete, vince il gruppo con maggior peso fra i soli campioni validi. Non esiste copertura minima.
 - Per ogni gruppo la distanza camera e il minimo delle distanze dei membri e l'ID stabile e il minimo ID dei membri.
-- Parita: gruppo contenente il campione centrale, poi distanza camera del gruppo minore, poi ID stabile del gruppo minore.
+- Tie-break residui: distanza camera del gruppo minore, poi ID stabile del gruppo minore.
 - Se il centro cade in un foro ma altri campioni colpiscono la parete, il gruppo dominante resta candidabile.
 - Criteri: risultato deterministico; nessun hit produce target non valido; superficie dominante verificata su bordo e curva.
 
 **REQ-UX-005 - Commit aggancio.**
 - Il click in `attach-targeting` costruisce una posa sul gruppo dominante.
-- Il punto candidato e il campione del gruppo dominante piu vicino al centro del footprint; a pari distanza vince l'indice campione minore. La normale e stabilizzata usando i campioni del gruppo.
+- Il punto candidato e il campione del gruppo dominante piu vicino al centro del footprint; a pari distanza vince l'indice campione minore. La normale e stabilizzata usando soltanto i campioni del gruppo entro `5 gradi` dalla normale del punto candidato e deve restare entro `5 gradi` da tale normale, garantendo che punto e orientamento appartengano alla stessa patch locale anche sui raccordi.
 - La posa valida viene applicata direttamente e il popup ricompare nello stato attached.
 - La posa invalida non sposta la hold, colora il target di rosso e mantiene il targeting.
 - `Escape` annulla senza modifiche.
@@ -296,9 +294,10 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Drag dalla freccia = shadow 3D aderente alla parete piu linea/freccia gialla retta verso il target richiesto; movimento vincolato all'asse della freccia.
 - In modalita `moving`, il drag puo iniziare anche direttamente sulla mesh della hold selezionata; in questo caso il delta e libero in entrambe le dimensioni screen-space e mantiene l'offset iniziale pointer-contact point.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
-- Durante pointermove sono consentiti raycast e calcoli geometrici di surface lock, ma nessuna validazione Convex Hull o collision query.
+- Durante pointermove e consentito un raycast globale sul primo punto visibile, ma nessuna validazione Convex Hull o collision query.
+- Durante il drag libero il contact point coincide con il puntatore. La shadow usa il primo punto visibile dell'intero modello, puo passare fra pannelli e adegua posizione e orientamento alla nuova normale trasportando il twist con la rotazione minima; non viene validato il percorso intermedio.
 - Al pointerup viene validato esclusivamente l'endpoint; endpoint invalido annulla integralmente il drag.
-- Criteri: direzioni coerenti con lo schermo; shadow aderente; nessun limite totale; hold reale immutata fino al commit; cambio superficie oltre 5 gradi ferma la shadow; cleanup completo su annullamento.
+- Criteri: direzioni coerenti con lo schermo; shadow sul punto visibile richiesto; nessun limite totale; hold reale immutata fino al commit; cambio pannello consentito; commit aggiorna punto, normale di aggancio e orientamento; cleanup completo su annullamento.
 
 **REQ-UX-008 - Interazione camera durante targeting.**
 - In `attach-targeting` il click sinistro e riservato al target.
@@ -418,7 +417,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-TST-010 - Test interazione contestuale 9UX.**
 - Criteri: copertura automatica popup, stati, targeting, superficie dominante, target invalido, aggancio diretto, sgancio progressivo e click incrementali.
-- Criteri drag: shadow creata senza richieste PNG/GLB/asset; geometrie e texture condivise; nessun rigid body/collider; shadow esclusa dal picking; hold reale, collider, contact point, normale e twist immutati durante pointermove; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; movimento shadow aderente e bloccato a 5 gradi; rotazione quantizzata a 1 grado; linea/arco coerenti; nessun limite totale alla distanza richiesta; esattamente una fase di validazione endpoint al pointerup; endpoint valido committato una sola volta; endpoint invalido con rollback totale di tutti gli stati; endpoint libero oltre ostacolo intermedio accettato; cleanup pointer/materiali/preview; camera congelata; shadow esclusa dall'export; nessuna perdita risorse dopo drag ripetuti.
+- Criteri drag: shadow creata senza richieste PNG/GLB/asset; geometrie e texture condivise; nessun rigid body/collider; shadow esclusa dal picking; hold reale, collider, contact point, normale e twist immutati durante pointermove; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; contact point sotto al mouse nel drag libero; passaggio fra pannelli e adeguamento alla nuova normale; rotazione quantizzata a 1 grado; linea/arco coerenti; nessun limite totale alla distanza richiesta; esattamente una fase di validazione endpoint al pointerup; endpoint valido committato una sola volta; endpoint invalido con rollback totale di tutti gli stati; endpoint libero oltre ostacolo intermedio accettato; cleanup pointer/materiali/preview; camera congelata; shadow esclusa dall'export; nessuna perdita risorse dopo drag ripetuti.
 
 ## DOC - Documentazione
 

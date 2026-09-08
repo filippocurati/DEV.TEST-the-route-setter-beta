@@ -534,6 +534,10 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - drag libero dalla hold attivo solo in `moving`, con offset pointer-contact point preservato;
 - drag diretto sulla hold non cambia selezione e non muove la camera;
 - shadow targeting orientata coerentemente con una superficie frontale e una inclinata;
+- punto e normale di aggancio localmente coerenti entro 5 gradi anche su pannelli laterali e raccordi;
+- drag sulla stessa patch laterale stabile rispetto alla densita degli eventi pointer;
+- raycast globale sul contact point corrente senza patch topologica durante il drag;
+- contact point sotto al mouse nel drag libero e adattamento automatico alla nuova normale;
 - verso della shadow rotazione coerente col lato della freccia trascinata;
 - comando export disabilitato durante drag e nuovamente disponibile dopo commit/cancel;
 - preview aggiornata al massimo una volta per frame, con misurazione percentile 95;

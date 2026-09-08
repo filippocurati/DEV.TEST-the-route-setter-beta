@@ -250,6 +250,45 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(['committed', 'invalid-endpoint']).toContain(after.lastActionResult?.status);
   });
 
+  test('il drag globale adatta la shadow alla normale della superficie visibile', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const canvas = page.locator('[data-scene-canvas]');
+    const canvasBox = await canvas.boundingBox();
+    const before = await sceneState(page);
+    const initialNormal = before.holdStates.Hold1.attachmentNormal!;
+    const [x, y] = before.holdScreenPositions.Hold1;
+    const startX = canvasBox!.x + ((x + 1) / 2) * canvasBox!.width;
+    const startY = canvasBox!.y + ((1 - y) / 2) * canvasBox!.height;
+    let preview: Awaited<ReturnType<typeof sceneState>> | null = null;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    for (const xf of [0.15, 0.22, 0.3, 0.38, 0.62, 0.7, 0.78, 0.85]) {
+      for (const yf of [0.3, 0.4, 0.5, 0.6, 0.7]) {
+        await page.mouse.move(canvasBox!.x + canvasBox!.width * xf, canvasBox!.y + canvasBox!.height * yf);
+        const state = await sceneState(page);
+        if (state.dragCandidateNormal && vectorAngle(initialNormal, state.dragCandidateNormal) > Math.PI / 36) {
+          preview = state;
+          break;
+        }
+      }
+      if (preview) break;
+    }
+    expect(preview).not.toBeNull();
+    expect(preview!.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(preview!.dragPreview!.candidate.x).toBeCloseTo(preview!.dragPreview!.requested.x, 3);
+    expect(preview!.dragPreview!.candidate.y).toBeCloseTo(preview!.dragPreview!.requested.y, 3);
+    expect(preview!.lastActionResult?.status).toBe('previewing');
+    await page.mouse.up();
+    const after = await sceneState(page);
+    expect(after.lastActionResult?.status).toBe('committed');
+    expect(vectorAngle(initialNormal, after.holdStates.Hold1.attachmentNormal!)).toBeGreaterThan(Math.PI / 36);
+    const rotationBefore = after.selectedHoldRotation!;
+    await page.getByRole('button', { name: 'Ruota' }).click();
+    await page.locator('[data-rotate="clockwise"]').click();
+    expect(quaternionAngle(rotationBefore, (await sceneState(page)).selectedHoldRotation!)).toBeCloseTo(Math.PI / 180, 4);
+  });
+
 });
 
 async function sceneState(page: Page) {
@@ -283,4 +322,11 @@ function distance(a: readonly number[], b: readonly number[]): number {
 function quaternionAngle(a: readonly number[], b: readonly number[]): number {
   const dot = Math.min(1, Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]));
   return 2 * Math.acos(dot);
+}
+
+function vectorAngle(a: readonly number[], b: readonly number[]): number {
+  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const lengthA = Math.hypot(...a);
+  const lengthB = Math.hypot(...b);
+  return Math.acos(Math.max(-1, Math.min(1, dot / (lengthA * lengthB))));
 }

@@ -35,6 +35,21 @@ describe('targeting 9UX', () => {
     expect(selectDominantSurface([hit(1, 1, 'z'), hit(7, 2, 'a')], 0.1)?.stableId).toBe('a');
   });
 
+  it('preferisce la patch centrale quando il centro colpisce una superficie valida', () => {
+    const central = hit(0, 0, 'centrale');
+    const adjacent = [hit(7, 1, 'laterale'), hit(8, 1.01, 'laterale'), hit(9, 1.02, 'laterale')];
+
+    const dominant = selectDominantSurface(
+      [central, ...adjacent],
+      0.1,
+      createTargetSamples(),
+      [[7, 8], [8, 9]],
+    );
+
+    expect(dominant?.containsCenter).toBe(true);
+    expect(dominant?.point).toEqual(central.point);
+  });
+
   it('non unisce campioni oltre distanza o oltre cinque gradi', () => {
     const far = selectDominantSurface([hit(1, 0, 'a'), hit(2, 2, 'b')], 0.5);
     const tilted = selectDominantSurface([
@@ -43,6 +58,27 @@ describe('targeting 9UX', () => {
     ], 1);
     expect(far?.hitCount).toBe(1);
     expect(tilted?.hitCount).toBe(1);
+  });
+
+  it('mantiene la normale dominante entro cinque gradi dalla normale del punto scelto', () => {
+    const samples = [0, 1, 2, 3].map((index) => ({
+      index,
+      ring: index,
+      ringIndex: 0,
+      x: index,
+      y: 0,
+      angle: 0,
+    }));
+    const hits = [0, 4, 8, 12].map((degrees, index) => ({
+      ...hit(index, index * 0.01, 'raccordo'),
+      normal: new Vector3(0, Math.sin(degrees * Math.PI / 180), Math.cos(degrees * Math.PI / 180)),
+      screenDistanceSquared: index,
+    }));
+
+    const dominant = selectDominantSurface(hits, 1, samples, [[0, 1], [1, 2], [2, 3]]);
+
+    expect(dominant?.point).toEqual(hits[0].point);
+    expect(dominant!.normal.angleTo(hits[0].normal) * 180 / Math.PI).toBeLessThanOrEqual(5);
   });
 
   it('limita il diametro e quantizza il drag a un grado', () => {
@@ -62,6 +98,7 @@ function hit(sampleIndex: number, x: number, stableId: string, cameraDistance = 
     normal: new Vector3(0, 0, 1),
     cameraDistance,
     stableId,
+    featureId: sampleIndex,
     screenDistanceSquared: sampleIndex,
   };
 }

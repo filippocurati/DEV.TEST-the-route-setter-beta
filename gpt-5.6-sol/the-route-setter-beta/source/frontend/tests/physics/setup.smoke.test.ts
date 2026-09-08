@@ -119,6 +119,17 @@ describe('suite fisica headless', () => {
     physics.dispose();
   });
 
+  it('mantiene il feature id coerente con il triangolo del TriMesh', async () => {
+    const physics = await PhysicsWorld.create(createPlaneTriMesh());
+
+    const first = physics.castRayToWall({ x: 1, y: -1, z: 1 }, { x: 0, y: 0, z: -1 }, 2);
+    const second = physics.castRayToWall({ x: -1, y: 1, z: 1 }, { x: 0, y: 0, z: -1 }, 2);
+
+    expect(first?.featureId).toBe(0);
+    expect(second?.featureId).toBe(1);
+    physics.dispose();
+  });
+
   it('move-and-slide tangenziale non attraversa un’altra hold', async () => {
     const physics = await PhysicsWorld.create(createPlaneTriMesh());
     const moving = physics.createKinematicObject(

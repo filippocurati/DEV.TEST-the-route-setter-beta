@@ -18,7 +18,7 @@
 | REQ-HUL-007 | 02 §5 | Build guard + test suite hull |
 | REQ-UI-001..004 | 02 §8 | E2E UI, accessibilita ed eliminazione shortcut legacy |
 | REQ-UX-001..002 | 02 § Stato fisico e modalita, §7.6..7.8, §8.1..8.2 | E2E popup, macchina a stati e sessione drag |
-| REQ-UX-003..005 | 02 §7.1..7.3 | Unit footprint/targeting/clustering + E2E shadow aggancio |
+| REQ-UX-003..005 | 02 §7.1..7.3 | Unit footprint/targeting/clustering, coerenza punto-normale + E2E shadow aggancio e raccordo laterale |
 | REQ-UX-006..009 | 02 §7.6..7.9, §8.3..8.5 | Unit pointer/preview math + E2E shadow mouse desktop |
 | REQ-UX-010 | 02 §8.2 | Unit result contract + E2E feedback |
 | REQ-IMG-001..004 | 02 §9 | E2E equivalenza vista corrente + esclusione shadow/overlay + export JPG |
@@ -35,7 +35,7 @@
 | REQ-TST-008 | 03 FASE 8 congelata | Test storici snap automatico, sostituiti dalla FASE 9UX |
 | REQ-TST-009 | 02 §12, 03 FASE 0/10 | `npm ci`, `dotnet restore --locked-mode` e verifica diff lockfile in CI |
 | REQ-TST-010 | 02 §7..8, 03 FASE 9UX/10 | Unit UX + E2E drag transazionale, invarianti pointermove, singola validazione endpoint e cleanup pointercancel |
-| DEC-011..022 | 02 §7.1, §7.6..7.9, §8.1..8.4, §9, 03 FASE 9UX | Test report 9UX-bis: report preservato, shadow runtime per targeting/drag, endpoint-only, drag libero/vincolato, verso rotazione, camera congelata, export disabilitato, popup compatto, dettagli condivisi ed Escape con deselezione |
+| DEC-011..023 | 02 §7.1, §7.6..7.9, §8.1..8.4, §9, 03 FASE 9UX | Test report 9UX-bis: report preservato, shadow runtime per targeting/drag, endpoint-only, drag libero/vincolato, verso rotazione, camera congelata, export disabilitato, popup compatto, dettagli condivisi, Escape con deselezione e coerenza punto-normale sui raccordi |
 | REQ-DEP-001..003 | 02 §12 | Restore/build deterministico in CI |
 | REQ-DEP-004 | 02 §12, 03 FASE 0 | Dependency baseline verification |
 | REQ-DOC-001..005 | 03 FASE 12 | `docs/applicazione.md`, `docs/test-automatici.md`, `docs/checklist-fase-12.md` e `npm run test:docs` |

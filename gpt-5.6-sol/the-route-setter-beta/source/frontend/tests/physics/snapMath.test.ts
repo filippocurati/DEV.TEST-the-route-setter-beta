@@ -7,6 +7,8 @@ import {
   projectAxisOnTangent,
   resolveContactNormal,
   selectDeterministicContact,
+  transportOrientationToNormal,
+  twistFromOrientation,
 } from '../../src/physics/snapMath';
 
 describe('snap deterministico', () => {
@@ -57,5 +59,16 @@ describe('snap deterministico', () => {
   it('mantiene orientamento normalizzato', () => {
     const result = addTwistAroundNormal(new Quaternion(), new Vector3(0, 0, 1), Math.PI / 3);
     expect(result.length()).toBeCloseTo(1);
+  });
+
+  it('trasporta il twist visivo sulla nuova normale con la rotazione minima', () => {
+    const from = new Vector3(0, 0, 1);
+    const to = new Vector3(1, 0, 0);
+    const initial = orientationFromNormal(from, Math.PI / 4);
+    const transported = transportOrientationToNormal(initial, from, to);
+
+    expect(new Vector3(0, 0, 1).applyQuaternion(transported).distanceTo(to)).toBeLessThan(1e-6);
+    expect(transported.length()).toBeCloseTo(1);
+    expect(twistFromOrientation(transported, to)).toBeCloseTo(Math.PI / 4, 6);
   });
 });

@@ -47,8 +47,8 @@ I diagrammi aggiuntivi, come il flusso Convex Hull e il drag transazionale, appr
 ## Test Eseguiti
 
 - [x] Build frontend.
-- [x] Vitest: 46/46.
-- [x] Playwright: 26/26.
+- [x] Vitest: 50/50.
+- [x] Playwright: 27/27.
 - [x] Restore NuGet locked.
 - [x] Build backend Release: 0 warning, 0 errori.
 - [x] xUnit: 33/33.

@@ -64,7 +64,7 @@ La nuova implementazione conserva popup, targeting diretto e click incrementali 
 - `REQ-IMG-002`
 - `REQ-PRF-003`
 - `REQ-TST-010`
-- decisioni `DEC-011..022`
+- decisioni `DEC-011..023`
 - principi `C18`, `C20`, `C21`
 
 ## 4. Shadow runtime
@@ -152,6 +152,9 @@ Al rilascio viene eseguita una sola validazione endpoint. La posa valida viene c
 19. Quality gate successivo alla sostituzione: build frontend superata, Vitest 44/44, Playwright 24/24, build backend 0 warning/0 errori, xUnit 33/33 e `git diff --check` superato.
 20. Popup contestuale reso piu compatto e trasparente; `Escape` esteso a deselezione e chiusura menu con rollback delle preview attive.
 21. Handle movimento/rotazione ridotti e alleggeriti; viewer dettagli condiviso reso disponibile dal popup della hold in scena.
+22. Regressione raccordo laterale: test unitario inizialmente fallito con normale dominante a `6 gradi` dalla normale del punto scelto, oltre il surface-lock di `5 gradi`.
+23. Correzione targeting: patch centrale prioritaria quando valida e media delle sole normali localmente compatibili; regressione unit superata.
+24. Decisione finale `DEC-024`: drag globale sull'intero modello, contact point sotto al mouse, cambio pannello consentito, orientamento trasportato sulla nuova normale e validazione endpoint-only.
 
 ## 9. Limiti accettati
 

@@ -144,8 +144,8 @@ Stato: CHIUSA.
 Decisione:
 - il drag parte da una delle quattro frecce e resta vincolato alla relativa direzione screen-space;
 - la shadow viene raycastata e mantenuta aderente alla parete durante tutta la preview;
-- surface lock a 5 gradi rispetto alla normale di aggancio applicato durante la costruzione geometrica;
-- la shadow si arresta all'ultimo candidato geometricamente ammissibile;
+- il surface lock a 5 gradi si applica ai click incrementali; per il drag di traslazione questa regola e superata da `DEC-024`;
+- nel drag la shadow segue il primo punto visibile richiesto e puo cambiare pannello;
 - traiettoria indicata da linea/freccia retta;
 - nessun limite massimo alla distanza richiesta.
 
@@ -229,3 +229,27 @@ Decisione:
 - il popup della hold selezionata include `Dettagli`, sempre disponibile;
 - `Dettagli` riusa il viewer 3D del catalogo e il manifest gia memorizzato, senza eager-load aggiuntivo;
 - gli handle circolari di movimento e rotazione sono ridotti e semitrasparenti per limitare l'occlusione della scena.
+
+## DEC-023 - Coerenza punto-normale sui raccordi
+
+Stato: CHIUSA.
+
+Decisione:
+- la chiusura transitiva resta usata per selezionare il gruppo dominante;
+- se il campione centrale e valido la relativa patch prevale, mentre la maggioranza resta il fallback per il centro in un foro;
+- punto e normale finali devono appartenere alla stessa patch locale;
+- la normale stabilizzata usa soltanto membri entro 5 gradi dalla normale del punto scelto e resta entro la stessa soglia;
+- targeting, click e drag condividono orientamento e fallback delle normali;
+- la tolleranza surface-lock resta 5 gradi e non viene aumentata per mascherare la triangolazione;
+- il tracking topologico non viene usato dal drag globale; resta valida la coerenza locale punto-normale del targeting.
+
+## DEC-024 - Drag globale sull'intero modello
+
+Stato: CHIUSA.
+
+Decisione:
+- il drag attached usa il primo punto visibile sull'intero modello e puo passare fra pannelli, aggiornando la normale di aggancio al commit;
+- il percorso intermedio non viene validato e la soglia di 5 gradi resta soltanto per i click incrementali;
+- nel drag libero il contact point coincide col puntatore e l'orientamento viene trasportato sulla nuova normale con la rotazione minima;
+- non viene introdotta una nuova modalita di movimento per le hold detached;
+- spawn, camera e popup detached mantengono il comportamento consolidato precedente.

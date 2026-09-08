@@ -200,10 +200,10 @@ Il clustering e deterministico:
 3. costruire sul pattern dei 37 campioni un grafo di adiacenza deterministico: numerare ogni anello in senso orario da angolo zero; collegare il centro a tutti i 6 punti del primo anello; collegare ogni punto ai due vicini circolari dello stesso anello; fra anelli consecutivi collegare ciascun punto ai due punti il cui angolo polare racchiude il suo angolo, includendo gli estremi e applicando wrap-around a 360 gradi;
 4. unire tramite union-find, elaborato per coppie ordinate `(indiceMinore, indiceMaggiore)`, solo coppie adiacenti nel grafo con distanza world <= diametro fisico della base e differenza delle normali <= `5 gradi`; questa connettivita del grafo definisce interamente la componente locale e non richiede adiacenza globale dei triangoli;
 5. la chiusura transitiva delle unioni definisce una componente locale, senza richiedere topologia globale del TriMesh;
-6. aggiornare la normale rappresentativa tramite media normalizzata dei campioni del gruppo;
-7. scegliere il gruppo con il maggior numero di campioni, tutti a peso unitario;
+6. scegliere il punto candidato del gruppo e aggiornare la normale rappresentativa tramite media normalizzata dei soli campioni entro 5 gradi dalla normale di quel punto; la normale risultante deve restare entro la stessa soglia dalla normale locale del punto;
+7. se il campione centrale e valido scegliere il gruppo che lo contiene; altrimenti scegliere il gruppo con il maggior numero di campioni, tutti a peso unitario;
 8. definire per ogni gruppo `distance = minima distanza camera dei membri` e `stableId = minimo ID dei membri`;
-9. applicare i tie-break `contiene campione centrale -> distance minore -> stableId minore`.
+9. applicare i tie-break residui `distance minore -> stableId minore`.
 
 L'assenza di una soglia minima e intenzionale: i campioni mancanti non votano contro i campioni che colpiscono la parete. Nel gruppo vincente il punto candidato e il membro a distanza schermo minima dal centro del footprint; in parita prevale l'indice campione minore.
 
@@ -254,7 +254,7 @@ Il confronto con `attachmentNormal`, non con la sola normale del passo precedent
 
 ### 7.6 Drag transazionale movimento
 
-Il drag non modifica lo stato fisico della hold. All'inizio viene creato:
+Il drag attached non modifica lo stato fisico della hold. All'inizio viene creato:
 
 ```text
 TransformDragSession {
@@ -274,20 +274,20 @@ TransformDragSession {
 
 La direzione e fissata dalla freccia origine del drag. La distanza richiesta e la proiezione firmata del delta pointer sull'asse screen-space della freccia; la componente perpendicolare viene ignorata. La traiettoria richiesta e la linea retta fra origine e target.
 
-Se il drag inizia direttamente sulla mesh della hold selezionata, `moveDirection` e `screenAxis` sono nulli: il delta pointer completo viene applicato al contact point proiettato, conservando l'offset fra pointerdown e contact point. Il resto della pipeline geometrica, inclusi sottopassi, aderenza e surface lock, e identico al drag da freccia.
+Se il drag inizia direttamente sulla mesh della hold selezionata, `moveDirection` e `screenAxis` sono nulli: il contact point richiesto coincide con il puntatore corrente e non viene conservato l'offset iniziale fra punto afferrato e contact point. Il drag da freccia mantiene invece il vincolo screen-space della freccia.
 
 Durante pointermove:
 
 1. accumulare l'ultimo evento e aggiornare al massimo una volta per frame;
-2. suddividere il delta screen-space in sottopassi geometrici massimi configurabili, inizialmente `10 px`;
-3. per ogni sottopasso eseguire un ray camera-verso-TriMesh sul target corretto dall'offset iniziale;
-4. aggiornare punto e normale candidati;
-5. accettare la preview solo se esiste continuita locale, la distanza dalla posa shadow precedente e compatibile e `angle(candidateNormal, attachmentNormal) <= 5 gradi`;
-6. arrestare la shadow all'ultimo candidato geometricamente ammissibile in caso di gap, diedro, spigolo o cambio oltre soglia;
+2. nel drag libero usare il pointer corrente come contact point richiesto; nel drag da freccia applicare il vincolo screen-space della freccia;
+3. eseguire un singolo ray camera-verso-TriMesh sull'intero modello e scegliere il primo punto visibile;
+4. aggiornare punto e normale candidati e trasportare l'orientamento iniziale sulla nuova normale mediante la rotazione minima;
+5. consentire il passaggio fra pannelli e inclinazioni senza confrontare la normale con quella iniziale;
+6. se il pointer non colpisce la parete mantenere la sessione ma rendere l'endpoint non committabile;
 7. aggiornare clone 3D e linea/freccia gialla;
 8. non eseguire `validatePose`, `contactShape`, shape-cast Convex Hull o mutazioni Rapier.
 
-Al pointerup viene validata esclusivamente `candidatePose`. Non viene verificato il percorso e non viene cercato un prefisso valido. Endpoint valido: un solo commit atomico di corpo, mesh, contact point e normale. Endpoint invalido: rollback totale implicito, perche la posa reale non e mai stata modificata.
+Al pointerup viene validata esclusivamente `candidatePose`. Non viene verificato il percorso e non viene cercato un prefisso valido. Endpoint valido: un solo commit atomico di corpo, mesh, contact point, feature, normale e twist ricalcolato rispetto alla nuova normale. Endpoint invalido: rollback totale implicito, perche la posa reale non e mai stata modificata.
 
 ### 7.7 Drag transazionale rotazione
 

@@ -48,6 +48,8 @@ import {
   orientationFromNormal,
   projectAxisOnTangent,
   resolveContactNormal,
+  transportOrientationToNormal,
+  twistFromOrientation,
 } from '../physics/snapMath';
 import { loadWall } from './wallLoader';
 import {
@@ -109,6 +111,8 @@ export interface WallSceneDebug {
   readonly dragCandidatePosition: readonly number[] | null;
   readonly targetNormal: readonly number[] | null;
   readonly poseValidationCount: number;
+  readonly dragCandidateNormal: readonly number[] | null;
+  readonly contactFeatureId: number | null;
 }
 
 export interface PerformanceSnapshot {
@@ -182,6 +186,7 @@ interface HoldSceneInstance {
   readonly spawnOffset: Vector2;
   readonly spawnCandidateIndex: number;
   contactPoint: Vector3 | null;
+  contactFeatureId: number | null;
   twistRadians: number;
   readonly baseDiameterMeters: number;
   readonly baseFootprint: readonly Vector3[];
@@ -198,7 +203,6 @@ interface TransformDragSession {
   readonly startTwist: number;
   readonly startScreenPoint: ViewportPoint;
   readonly pointerStartPoint: ViewportPoint;
-  readonly pointerContactOffset: Vector2;
   readonly moveDirection: MoveDirection | 'free' | null;
   readonly screenAxis: Vector2 | null;
   readonly shadow: Group;
@@ -208,6 +212,8 @@ interface TransformDragSession {
   candidatePosition: Vector3;
   candidateRotation: Quaternion;
   candidateNormal: Vector3;
+  candidateFeatureId: number;
+  candidateEndpointAvailable: boolean;
   candidateTwist: number;
   candidateScreenPoint: ViewportPoint;
   requestedScreenPoint: ViewportPoint;
@@ -359,6 +365,8 @@ export async function createWallScene(
         ? new Vector3(0, 0, 1).applyQuaternion(targetingShadow.quaternion).toArray()
         : null,
       poseValidationCount,
+      dragCandidateNormal: dragSession?.candidateNormal.toArray() ?? null,
+      contactFeatureId: selectedHoldId ? holdInstances.get(selectedHoldId)?.contactFeatureId ?? null : null,
       dragPreview: dragSession ? {
         kind: dragSession.kind,
         start: dragSession.startScreenPoint,
@@ -697,6 +705,7 @@ export async function createWallScene(
         normal: hit.normal,
         cameraDistance: hit.distance,
         stableId: hit.featureId.toString().padStart(12, '0'),
+        featureId: hit.featureId,
         screenDistanceSquared: sample.x * sample.x + sample.y * sample.y,
       });
     });
@@ -710,6 +719,7 @@ export async function createWallScene(
     instance.attachmentNormal = dominant.normal.clone();
     instance.currentNormal = dominant.normal.clone();
     instance.contactPoint = dominant.point.clone();
+    instance.contactFeatureId = dominant.featureId;
     interactionMode = 'idle';
     targetPreview = null;
     disposeTargetingShadow();
@@ -759,6 +769,7 @@ export async function createWallScene(
       instance.attachmentNormal = null;
       instance.currentNormal.set(0, 0, 1);
       instance.contactPoint = null;
+      instance.contactFeatureId = null;
       instance.twistRadians = 0;
       interactionMode = 'idle';
       physics.synchronizeRendering();
@@ -880,33 +891,23 @@ export async function createWallScene(
         x: session.startScreenPoint.x + session.screenAxis!.x * scalar,
         y: session.startScreenPoint.y + session.screenAxis!.y * scalar,
       };
-    })() : {
-      x: point.x - session.pointerContactOffset.x,
-      y: point.y - session.pointerContactOffset.y,
-    };
-    const start = session.candidateScreenPoint;
-    const screenDistance = Math.hypot(target.x - start.x, target.y - start.y);
-    const substeps = Math.max(1, Math.ceil(screenDistance / 5));
-    let accepted = false;
-    for (let step = 1; step <= substeps; step += 1) {
-      const fraction = step / substeps;
-      const samplePoint = {
-        x: start.x + (target.x - start.x) * fraction,
-        y: start.y + (target.y - start.y) * fraction,
-      };
-      const hit = raycastWallAt(samplePoint);
-      if (!hit || hit.normal.angleTo(instance.attachmentNormal) > Math.PI / 36
-        || !isLocallyContinuousSurface(session.candidatePosition, hit.point, session.candidateNormal)) {
-        lastActionResult = result('surface-limit', 'Limite della superficie raggiunto.');
-        break;
-      }
+    })() : point;
+    const hit = raycastWallAt(target);
+    if (hit) {
+      const normal = resolveContactNormal(hit.normal, session.candidateNormal);
+      if (normal.dot(hit.normal) < 0) normal.negate();
       session.candidatePosition.copy(hit.point);
-      session.candidateNormal.copy(hit.normal);
-      session.candidateRotation.copy(orientationFromNormal(hit.normal, session.startTwist));
-      session.candidateScreenPoint = samplePoint;
-      accepted = true;
+      session.candidateNormal.copy(normal);
+      session.candidateRotation.copy(transportOrientationToNormal(session.startRotation, session.startNormal, normal));
+      session.candidateTwist = twistFromOrientation(session.candidateRotation, normal);
+      session.candidateScreenPoint = target;
+      session.candidateEndpointAvailable = true;
+      lastActionResult = result('previewing', 'Anteprima spostamento attiva.');
+      applyShadowPose(session);
+    } else {
+      session.candidateEndpointAvailable = false;
+      lastActionResult = result('surface-limit', 'Nessuna superficie visibile nel punto richiesto.');
     }
-    if (accepted) applyShadowPose(session);
     notifyInteraction();
     render();
   }
@@ -918,7 +919,7 @@ export async function createWallScene(
     if (!session || session.kind !== 'move' || session.pointerId !== pointerId || !instance) {
       return result('not-available', 'Nessuna anteprima movimento attiva.');
     }
-    const valid = validatePose(
+    const valid = session.candidateEndpointAvailable && validatePose(
       instance,
       session.candidatePosition,
       session.candidateRotation,
@@ -928,7 +929,10 @@ export async function createWallScene(
     if (valid && changed) {
       physics.setKinematicTransform(instance.physics, session.candidatePosition, session.candidateRotation);
       instance.contactPoint = session.candidatePosition.clone();
+      instance.contactFeatureId = session.candidateFeatureId;
       instance.currentNormal = session.candidateNormal.clone();
+      instance.attachmentNormal = session.candidateNormal.clone();
+      instance.twistRadians = session.candidateTwist;
       physics.synchronizeRendering();
     }
     const committed = valid && changed;
@@ -1029,7 +1033,6 @@ export async function createWallScene(
       startTwist: instance.twistRadians,
       startScreenPoint: contactScreen,
       pointerStartPoint: point,
-      pointerContactOffset: new Vector2(point.x - contactScreen.x, point.y - contactScreen.y),
       moveDirection,
       screenAxis,
       shadow,
@@ -1039,6 +1042,8 @@ export async function createWallScene(
       candidatePosition: position.clone(),
       candidateRotation: quaternion.clone(),
       candidateNormal: instance.currentNormal.clone(),
+      candidateFeatureId: instance.contactFeatureId ?? Number.MAX_SAFE_INTEGER,
+      candidateEndpointAvailable: true,
       candidateTwist: instance.twistRadians,
       candidateScreenPoint: contactScreen,
       requestedScreenPoint: point,
@@ -1062,22 +1067,6 @@ export async function createWallScene(
     session.shadow.position.copy(session.candidatePosition);
     session.shadow.quaternion.copy(session.candidateRotation);
     session.shadow.updateMatrix();
-  }
-
-  /** Verifica che il segmento fra due candidati resti vicino alla stessa superficie locale. */
-  function isLocallyContinuousSurface(from: Vector3, to: Vector3, normal: Vector3): boolean {
-    const distance = from.distanceTo(to);
-    if (distance <= 1e-6) return true;
-    const checks = Math.max(1, Math.ceil(distance / 0.05));
-    for (let index = 1; index <= checks; index += 1) {
-      const sample = from.clone().lerp(to, index / checks);
-      const origin = sample.clone().addScaledVector(normal, 0.02);
-      const hit = physics.castRayToWall(origin, normal.clone().negate(), 0.04);
-      if (!hit) return false;
-      const point = new Vector3(hit.point.x, hit.point.y, hit.point.z);
-      if (point.distanceTo(sample) > 0.021) return false;
-    }
-    return true;
   }
 
   function finishDragSession(): void {
@@ -1115,6 +1104,7 @@ export async function createWallScene(
     if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
     return { point: new Vector3(hit.point.x, hit.point.y, hit.point.z), normal, distance: hit.distance, featureId: hit.featureId };
   }
+
 
   function targetDiameterPx(instance: HoldSceneInstance, wallPoint: Vector3, normal: Vector3): number {
     const rotation = orientationFromNormal(normal, instance.twistRadians);
@@ -1313,6 +1303,7 @@ export async function createWallScene(
           spawnOffset: spawnResult.candidate,
           spawnCandidateIndex: spawnResult.index,
           contactPoint: null,
+          contactFeatureId: null,
           twistRadians: 0,
           baseDiameterMeters,
           baseFootprint,

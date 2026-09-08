@@ -46,7 +46,7 @@ npm ci
 npm test
 ```
 
-Risultato atteso: 46 test Vitest su 9 file.
+Risultato atteso: 50 test Vitest su 9 file.
 
 La suite copre:
 
@@ -81,7 +81,7 @@ Eseguire:
 npm run test:e2e
 ```
 
-Risultato atteso: 26 test Playwright superati. Sono coperti startup, navigazione camera, catalogo, dettaglio 3D, caricamento/rimozione, export, popup, `Escape`, targeting, aggancio, sgancio, movimento, rotazione, shadow, commit/rollback e cleanup `pointercancel`.
+Risultato atteso: 27 test Playwright superati. Sono coperti startup, navigazione camera, catalogo, dettaglio 3D, caricamento/rimozione, export, popup, `Escape`, targeting, aggancio, sgancio, movimento globale fra pannelli, rotazione, shadow, commit/rollback e cleanup `pointercancel`.
 
 In CI `npm run test:e2e:ci` produce:
 
@@ -152,8 +152,8 @@ Il comando deve terminare senza differenze dopo `npm ci` e `dotnet restore --loc
 | Gate | Risultato atteso |
 |---|---:|
 | Build frontend | Superata |
-| Vitest | `46/46` |
-| Playwright | `26/26` |
+| Vitest | `50/50` |
+| Playwright | `27/27` |
 | Build backend Release | 0 warning, 0 errori |
 | xUnit | `33/33` |
 | Tracciabilità | 102 requisiti nella matrice |
