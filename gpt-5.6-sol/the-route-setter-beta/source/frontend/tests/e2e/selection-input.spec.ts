@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const pageErrors = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  pageErrors.set(page, errors);
+  page.on('pageerror', (error) => errors.push(error.message));
+});
+test.afterEach(({ page }) => {
+  expect(pageErrors.get(page), 'Nessuna eccezione JavaScript durante le interazioni').toEqual([]);
+});
+
 test.describe('selezione e comandi contestuali 9UX', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(180_000);
@@ -61,8 +71,7 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     const beforeMove = await sceneState(page);
     await popup.getByRole('button', { name: 'Sposta' }).click();
     await expect.poll(async () => (await sceneState(page)).interactionMode).toBe('moving');
-    await page.locator('[data-move="up"]').dispatchEvent('pointerdown', { pointerType: 'mouse', pointerId: 1, button: 0 });
-    await page.locator('[data-move="up"]').dispatchEvent('pointerup', { pointerType: 'mouse', pointerId: 1, button: 0 });
+    await page.locator('[data-move="up"]').click();
     const afterMove = await sceneState(page);
     expect(distance(beforeMove.selectedHoldPosition!, afterMove.selectedHoldPosition!)).toBeCloseTo(0.01, 3);
 
@@ -93,28 +102,26 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     await attachAtWallCenter(page);
     const popup = page.getByRole('toolbar', { name: 'Azioni presa selezionata' });
     await popup.getByRole('button', { name: 'Sposta' }).click();
-    const moveElapsed = await page.locator('[data-move="up"]').evaluate((element) => {
-      const started = performance.now();
-      for (let index = 0; index < 20; index += 1) {
-        element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: index + 1, pointerType: 'mouse', button: 0 }));
-        element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: index + 1, pointerType: 'mouse', button: 0 }));
-      }
-      return performance.now() - started;
-    });
-    expect(moveElapsed).toBeLessThan(3_000);
+    const beforeMove = await sceneState(page);
+    const moveStarted = Date.now();
+    for (let index = 0; index < 20; index += 1) {
+      await page.locator('[data-move="up"]').click();
+    }
+    // Include il costo di input reale, actionability e round-trip Playwright.
+    expect(Date.now() - moveStarted).toBeLessThan(15_000);
+    expect((await sceneState(page)).selectedHoldPosition).not.toEqual(beforeMove.selectedHoldPosition);
 
     await page.keyboard.press('Escape');
     await clickHold(page, 'Hold1');
     await popup.getByRole('button', { name: 'Ruota' }).click();
-    const rotateElapsed = await page.locator('[data-rotate="clockwise"]').evaluate((element) => {
-      const started = performance.now();
-      for (let index = 0; index < 20; index += 1) {
-        element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: index + 101, pointerType: 'mouse', button: 0 }));
-        element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: index + 101, pointerType: 'mouse', button: 0 }));
-      }
-      return performance.now() - started;
-    });
-    expect(rotateElapsed).toBeLessThan(3_000);
+    const beforeRotate = await sceneState(page);
+    const rotateStarted = Date.now();
+    for (let index = 0; index < 20; index += 1) {
+      await page.locator('[data-rotate="clockwise"]').click();
+    }
+    expect(Date.now() - rotateStarted).toBeLessThan(15_000);
+    expect(quaternionAngle(beforeRotate.selectedHoldRotation!, (await sceneState(page)).selectedHoldRotation!))
+      .toBeCloseTo(20 * Math.PI / 180, 4);
   });
 
   test('mostra shadow durante drag movimento e committa soltanto al rilascio', async ({ page }) => {
@@ -123,10 +130,10 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     const handle = page.locator('[data-move="up"]');
     const box = await handle.boundingBox();
     const before = await sceneState(page);
-    const assetRequests: string[] = [];
+    const unexpectedRequests: string[] = [];
     page.on('request', (request) => {
       const path = new URL(request.url()).pathname;
-      if (path.endsWith('.png') || path.endsWith('.glb') || path.endsWith('/model')) assetRequests.push(path);
+      if (path.startsWith('/api/') || path.endsWith('.png') || path.endsWith('.glb')) unexpectedRequests.push(path);
     });
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
@@ -140,10 +147,13 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(preview.holdStates.Hold1.twistRadians).toBe(before.holdStates.Hold1.twistRadians);
     expect(preview.poseValidationCount).toBe(before.poseValidationCount);
     expect(preview.dragPreview?.kind).toBe('move');
+    expect(preview.dragCandidateEndpointAvailable).toBe(true);
+    expect(preview.dragPreview!.requested).toEqual(preview.dragPreview!.candidate);
+    expect(preview.dragPreview!.requested.x).toBeCloseTo(preview.dragPreview!.start.x, 5);
     expect(preview.previewObjectCount).toBe(1);
     expect(preview.rigidBodyCount).toBe(before.rigidBodyCount);
     expect(preview.colliderCount).toBe(before.colliderCount);
-    expect(assetRequests).toEqual([]);
+    expect(unexpectedRequests).toEqual([]);
     await expect(page.locator('[data-drag-indicator]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeDisabled();
 
@@ -153,7 +163,136 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(after.dragPreview).toBeNull();
     expect(after.previewObjectCount).toBe(0);
     expect(after.selectedHoldPosition).not.toEqual(before.selectedHoldPosition);
+    expect(after.contactFeatureId).toBe(preview.dragCandidateFeatureId);
+    expect(unexpectedRequests).toEqual([]);
     await expect(page.getByRole('button', { name: 'Genera immagine' })).toBeEnabled();
+  });
+
+  test('nasconde e ripristina la shadow e annulla il rilascio fuori viewport senza superficie', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const box = (await page.locator('[data-move="up"]').boundingBox())!;
+    const canvasBox = (await page.locator('[data-scene-canvas]').boundingBox())!;
+    const before = await sceneState(page);
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y - 60, { steps: 3 });
+    await expect.poll(async () => (await sceneState(page)).dragCandidateEndpointAvailable).toBe(true);
+    expect((await sceneState(page)).dragShadowVisible).toBe(true);
+
+    // Il pointer capture della freccia conserva il gesto anche fuori viewport.
+    await page.mouse.move(x, -canvasBox.height * 2);
+    await expect.poll(async () => (await sceneState(page)).lastActionResult?.reason).toBe('no-surface');
+    const missed = await sceneState(page);
+    expect(missed.lastActionResult?.status).toBe('surface-limit');
+    expect(missed.dragCandidateEndpointAvailable).toBe(false);
+    expect(missed.dragShadowVisible).toBe(false);
+    expect(missed.poseValidationCount).toBe(before.poseValidationCount);
+
+    await page.mouse.move(x, y - 60);
+    await expect.poll(async () => (await sceneState(page)).dragShadowVisible).toBe(true);
+    const recovered = await sceneState(page);
+    expect(recovered.dragCandidateEndpointAvailable).toBe(true);
+    expect(recovered.lastActionResult?.status).toBe('previewing');
+    expect(recovered.lastActionResult?.reason).toBeUndefined();
+    await page.mouse.move(x, -canvasBox.height * 2);
+    await expect.poll(async () => (await sceneState(page)).dragCandidateEndpointAvailable).toBe(false);
+    await page.mouse.up();
+    const after = await sceneState(page);
+    expect(after.lastActionResult).toMatchObject({ status: 'invalid-endpoint', reason: 'no-surface' });
+    expect(after.lastActionResult?.message).not.toMatch(/collision/i);
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(after.holdStates.Hold1).toEqual(before.holdStates.Hold1);
+    expect(after.contactFeatureId).toBe(before.contactFeatureId);
+    expect(after.poseValidationCount).toBe(before.poseValidationCount);
+    expect(after.dragPreview).toBeNull();
+    expect(after.dragCandidateFeatureId).toBeNull();
+    expect(after.dragCandidateEndpointAvailable).toBe(false);
+    expect(after.dragShadowVisible).toBe(false);
+    expect(after.previewObjectCount).toBe(0);
+    expect(after.orbitControlsEnabled).toBe(true);
+  });
+
+  for (const mode of ['Sposta', 'Ruota'] as const) {
+    test(`distingue no-change da collisione nel drag ${mode}`, async ({ page }) => {
+      await attachAtWallCenter(page);
+      await page.getByRole('button', { name: mode }).click();
+      const handle = page.locator(mode === 'Sposta' ? '[data-move="up"]' : '[data-rotate="clockwise"]');
+      const box = (await handle.boundingBox())!;
+      const before = await sceneState(page);
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y - 60, { steps: 3 });
+      await expect.poll(async () => (await sceneState(page)).dragPreview?.kind)
+        .toBe(mode === 'Sposta' ? 'move' : 'rotate');
+      await page.mouse.move(x, y, { steps: 3 });
+      await page.mouse.up();
+      const after = await sceneState(page);
+      expect(after.lastActionResult).toMatchObject({ status: 'cancelled', reason: 'no-change' });
+      expect(after.lastActionResult?.message).not.toMatch(/collision/i);
+      expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+      expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+      expect(after.holdStates.Hold1).toEqual(before.holdStates.Hold1);
+      expect(after.contactFeatureId).toBe(before.contactFeatureId);
+      expect(after.poseValidationCount).toBe(before.poseValidationCount);
+      expect(after.dragPreview).toBeNull();
+      expect(after.previewObjectCount).toBe(0);
+      expect(after.orbitControlsEnabled).toBe(true);
+    });
+  }
+
+  test('mantiene reason e posa quando aggancio e drag collidono con una presa', async ({ page }) => {
+    await attachAtWallCenter(page);
+    await page.locator('[data-hold-id="Hold2"]').getByRole('button', { name: 'Utilizza' }).click();
+    await expect(page.locator('[data-catalog-feedback]')).toHaveText('Hold2 aggiunta alla scena.', { timeout: 120_000 });
+    const before = await sceneState(page);
+    await page.getByRole('button', { name: 'Aggancia' }).click();
+    const box = (await page.locator('[data-scene-canvas]').boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const after = await sceneState(page);
+    expect(after.lastActionResult).toMatchObject({ status: 'invalid-target', reason: 'hold-collision' });
+    expect(after.lastActionResult?.message).toContain('altra presa');
+    expect(after.interactionMode).toBe('attach-targeting');
+    expect(after.holdStates.Hold2.physicalState).toBe('detached');
+    expect(after.selectedHoldPosition).toEqual(before.selectedHoldPosition);
+    expect(after.selectedHoldRotation).toEqual(before.selectedHoldRotation);
+    expect(after.contactFeatureId).toBeNull();
+    expect(after.targetVisible).toBe(true);
+
+    // Un nuovo punto conserva il fallimento precedente finche non viene confermato.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 80);
+    await expect.poll(async () => (await sceneState(page)).lastActionResult?.reason).toBe('hold-collision');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - 80);
+    await expect.poll(async () => (await sceneState(page)).holdStates.Hold2.physicalState).toBe('attached');
+    expect((await sceneState(page)).lastActionResult?.reason).toBeUndefined();
+    // Dopo il commit su pointerup, il click sul punto di contatto puo deselezionare la mesh.
+    await clickHold(page, 'Hold2');
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const handleBox = (await page.locator('[data-move="down"]').boundingBox())!;
+    const attached = await sceneState(page);
+    const x = handleBox.x + handleBox.width / 2;
+    const y = handleBox.y + handleBox.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 80, { steps: 3 });
+    await expect.poll(async () => (await sceneState(page)).dragPreview?.kind).toBe('move');
+    expect((await sceneState(page)).poseValidationCount).toBe(attached.poseValidationCount);
+    await page.mouse.up();
+    const rejected = await sceneState(page);
+    expect(rejected.lastActionResult).toMatchObject({ status: 'invalid-endpoint', reason: 'hold-collision' });
+    expect(rejected.selectedHoldPosition).toEqual(attached.selectedHoldPosition);
+    expect(rejected.selectedHoldRotation).toEqual(attached.selectedHoldRotation);
+    expect(rejected.holdStates.Hold2).toEqual(attached.holdStates.Hold2);
+    expect(rejected.contactFeatureId).toBe(attached.contactFeatureId);
+    expect(rejected.poseValidationCount).toBe(attached.poseValidationCount + 1);
+    expect(rejected.dragPreview).toBeNull();
+    expect(rejected.previewObjectCount).toBe(0);
+    expect(rejected.orbitControlsEnabled).toBe(true);
   });
 
   test('pointercancel annulla il drag e rilascia preview e camera', async ({ page }) => {
@@ -267,7 +406,8 @@ test.describe('selezione e comandi contestuali 9UX', () => {
       for (const yf of [0.3, 0.4, 0.5, 0.6, 0.7]) {
         await page.mouse.move(canvasBox!.x + canvasBox!.width * xf, canvasBox!.y + canvasBox!.height * yf);
         const state = await sceneState(page);
-        if (state.dragCandidateNormal && vectorAngle(initialNormal, state.dragCandidateNormal) > Math.PI / 36) {
+        if (state.dragCandidateEndpointAvailable && state.dragCandidateNormal
+          && vectorAngle(initialNormal, state.dragCandidateNormal) > Math.PI / 36) {
           preview = state;
           break;
         }
@@ -279,9 +419,14 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(preview!.dragPreview!.candidate.x).toBeCloseTo(preview!.dragPreview!.requested.x, 3);
     expect(preview!.dragPreview!.candidate.y).toBeCloseTo(preview!.dragPreview!.requested.y, 3);
     expect(preview!.lastActionResult?.status).toBe('previewing');
+    expect(preview!.dragCandidateFeatureId).not.toBeNull();
+    expect(preview!.dragCandidateFeatureId).not.toBe(before.contactFeatureId);
+    expect(preview!.contactFeatureId).toBe(before.contactFeatureId);
+    expect(preview!.poseValidationCount).toBe(before.poseValidationCount);
     await page.mouse.up();
     const after = await sceneState(page);
     expect(after.lastActionResult?.status).toBe('committed');
+    expect(after.contactFeatureId).toBe(preview!.dragCandidateFeatureId);
     expect(vectorAngle(initialNormal, after.holdStates.Hold1.attachmentNormal!)).toBeGreaterThan(Math.PI / 36);
     const rotationBefore = after.selectedHoldRotation!;
     await page.getByRole('button', { name: 'Ruota' }).click();

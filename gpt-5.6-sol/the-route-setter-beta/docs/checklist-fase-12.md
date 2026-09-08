@@ -46,6 +46,10 @@ I diagrammi aggiuntivi, come il flusso Convex Hull e il drag transazionale, appr
 
 ## Test Eseguiti
 
+Esito finale `DEC-026`: documentate soglie separate (parete `1..10 mm`, default `5 mm`; hold `1 mm`), configurazione runtime senza fallback, diagnostica coerente con priorita alla violazione accertata, bootstrap fail-closed e procedura edit/reload con avviso di perdita sessione. Unitari `331/331` in `12` file ed E2E `43/43` superati, verificati e comunicati dall'utente. Verificata anche una build produzione in dist temporanea: file reale `5 -> 3 -> 5` applicato al reload senza rebuild. Backend invariato, nessuna nuova certificazione prestazionale. Le evidenze storiche sotto restano invariate; dettaglio corrente in `docs/test-automatici.md` e [report DEC-026](../phases-outcome/Wall_tolerance_configuration_done.md).
+
+Le evidenze seguenti sono storiche della fase 12 e restano invariate. Per il primo gruppo corrente (`DEC-025`) sono confermati build frontend superata, 215/215 unit in 11 file e 31/31 E2E con zero errori pageerror/console/HTTP nella traccia. Backend invariato, 33/33 resta evidenza precedente. La suite prestazionale headless SwiftShader e invece FALLITA (3 FPS, long task massimo 829 ms, heartbeat 748 ms); il benchmark Node su 40 hold reali non e certificativo. Risultati, misure e limiti correnti sono in `docs/test-automatici.md`; nessuna nuova certificazione hardware.
+
 - [x] Build frontend.
 - [x] Vitest: 50/50.
 - [x] Playwright: 27/27.

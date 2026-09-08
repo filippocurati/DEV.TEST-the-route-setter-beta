@@ -70,9 +70,10 @@ Tutti i triangoli del modello parete sono candidabili come target e partecipano 
 
 **C18 - Validazione del Convex Hull.**
 Aggancio, sgancio, spostamento e rotazione devono usare l'intero Convex Hull della presa nelle pose committate. Aggancio, sgancio e drag di spostamento/rotazione sono azioni editoriali endpoint-only: validano la sola posa finale e non il percorso. Durante il drag la presa reale resta immutata; una posa endpoint invalida annulla integralmente l'operazione senza commit parziale. I soli click incrementali continuano ad arrestarsi all'ultima posa valida.
+La non compenetrazione si valuta con soglie separate approvate in `DEC-026`: parete configurabile `1..10 mm`, decimali inclusi, default `5 mm`; fra prese `1 mm` immutabile; epsilon numerico `2e-6 m` invariato. Questo non modifica il surface-lock dei click (`5 gradi`, gap `5 mm`) ne autorizza gli sweep da partenza separata a oltrepassare il primo contatto.
 
-**C19 - Blocco al cambio di superficie.**
-Una presa agganciata puo seguire soltanto piccole variazioni della superficie locale entro la tolleranza angolare rispetto alla normale di aggancio. Diedri, spigoli, prominenze e cambi di inclinazione oltre soglia sono bloccanti; non e prevista transizione automatica fra superfici.
+**C19 - Blocco al cambio di superficie nei soli click incrementali.**
+Nei click incrementali una presa agganciata puo seguire soltanto piccole variazioni della superficie locale entro 5 gradi rispetto alla normale di aggancio. Diedri, spigoli, prominenze e cambi di inclinazione oltre soglia sono bloccanti. Il drag di movimento e invece globale ed endpoint-only: puo cambiare pannello e aggiorna la normale di aggancio al commit, senza validare il percorso intermedio (`DEC-024`).
 
 **C20 - Interazione contestuale pointer-based.**
 Le azioni hold sono fornite da un popup contestuale e da overlay DOM/SVG. Non sono previste shortcut globali per trasformare le prese. Le modalita di targeting, spostamento e rotazione sono mutuamente esclusive e annullabili con `Escape`; la stessa azione deseleziona la hold e nasconde il popup. I drag di spostamento e rotazione usano una shadow 3D runtime priva di collider; nessun file preview aggiuntivo e richiesto.

@@ -42,7 +42,8 @@ import {
   type SurfaceSampleHit,
 } from '../interaction/targetSampling';
 import { PhysicsWorld } from '../physics/physicsWorld';
-import type { KinematicPhysicsObject } from '../physics/physicsWorld';
+import { HOLD_PENETRATION_TOLERANCE_METERS, type PhysicsConfig } from '../config/physicsConfig';
+import type { KinematicPhysicsObject, PoseValidation, PoseDiagnostic, PosePathValidation } from '../physics/physicsWorld';
 import {
   addTwistAroundNormal,
   orientationFromNormal,
@@ -60,6 +61,8 @@ import {
 
 /** Riferimenti della scena esposti esclusivamente per diagnostica e test E2E. */
 export interface WallSceneDebug {
+  readonly collisionTolerancesMm: { readonly wall: number; readonly holds: number };
+  readonly lastPoseDiagnostic: PoseDiagnostic | null;
   readonly wallLoaded: boolean;
   readonly triMeshVertexCount: number;
   readonly triMeshIndexCount: number;
@@ -112,6 +115,9 @@ export interface WallSceneDebug {
   readonly targetNormal: readonly number[] | null;
   readonly poseValidationCount: number;
   readonly dragCandidateNormal: readonly number[] | null;
+  readonly dragCandidateFeatureId: number | null;
+  readonly dragCandidateEndpointAvailable: boolean;
+  readonly dragShadowVisible: boolean;
   readonly contactFeatureId: number | null;
 }
 
@@ -230,6 +236,7 @@ declare global {
 export async function createWallScene(
   container: HTMLElement,
   status: HTMLElement,
+  physicsConfig: PhysicsConfig,
 ): Promise<WallSceneController> {
   const scene = new Scene();
   scene.background = new Color(0x101713);
@@ -278,7 +285,7 @@ export async function createWallScene(
     margin: SPAWN_GRID_MARGIN_METERS,
   });
   status.textContent = 'Inizializzazione fisica...';
-  const physics = await PhysicsWorld.create(wall.triMesh);
+  const physics = await PhysicsWorld.create(wall.triMesh, physicsConfig);
   const holdInstances = new Map<string, HoldSceneInstance>();
   const colliderDocuments = new Map<string, Promise<HoldColliderDocument>>();
   const interactionListeners = new Set<(snapshot: InteractionSnapshot) => void>();
@@ -304,6 +311,8 @@ export async function createWallScene(
   const updateDebugState = (): void => {
     window.__ROUTE_SETTER_SCENE__ = {
       wallLoaded: true,
+      collisionTolerancesMm: { wall: physics.wallPenetrationToleranceMeters * 1000, holds: HOLD_PENETRATION_TOLERANCE_METERS * 1000 },
+      lastPoseDiagnostic: physics.lastPoseDiagnostic,
       triMeshVertexCount: wall.triMesh.vertices.length / 3,
       triMeshIndexCount: wall.triMesh.indices.length,
       cameraPosition: camera.position.toArray(),
@@ -366,6 +375,9 @@ export async function createWallScene(
         : null,
       poseValidationCount,
       dragCandidateNormal: dragSession?.candidateNormal.toArray() ?? null,
+      dragCandidateFeatureId: dragSession?.candidateFeatureId ?? null,
+      dragCandidateEndpointAvailable: dragSession?.candidateEndpointAvailable ?? false,
+      dragShadowVisible: dragSession?.shadow.visible ?? false,
       contactFeatureId: selectedHoldId ? holdInstances.get(selectedHoldId)?.contactFeatureId ?? null : null,
       dragPreview: dragSession ? {
         kind: dragSession.kind,
@@ -649,10 +661,23 @@ export async function createWallScene(
   }
 
   const selectedInstance = (): HoldSceneInstance | undefined => selectedHoldId ? holdInstances.get(selectedHoldId) : undefined;
-  const result = (status: SceneActionResult['status'], message: string): SceneActionResult => {
-    lastActionResult = { status, message };
+  const result = (
+    status: SceneActionResult['status'],
+    message: string,
+    reason?: SceneActionResult['reason'],
+  ): SceneActionResult => {
+    lastActionResult = { status, message, reason };
+    updateDebugState();
     return lastActionResult;
   };
+
+  /** Traduce il blocker senza dedurre collisioni da un esito privo di causa fisica. */
+  function poseFailure(blocker: PoseValidation['blocker']): Pick<SceneActionResult, 'message' | 'reason'> {
+    if (physics.lastPoseDiagnostic?.uncertain) return { message: 'Impossibile verificare questa posizione.', reason: 'path-unresolved' };
+    if (blocker === 'wall') return { message: 'Collisione con la parete.', reason: 'wall-collision' };
+    if (blocker === 'hold') return { message: 'Collisione con un\'altra presa.', reason: 'hold-collision' };
+    return { message: 'Validazione della posa non risolta.', reason: 'path-unresolved' };
+  }
 
   /** Aggiorna il target centrale senza eseguire il campionamento completo. */
   function updateAttachTarget(point: ViewportPoint): TargetPreview | null {
@@ -710,10 +735,13 @@ export async function createWallScene(
       });
     });
     const dominant = selectDominantSurface(hits, instance.baseDiameterMeters, targetSamples, targetAdjacency);
-    if (!dominant) return invalidateTarget('Nessuna superficie valida nel target.');
+    if (!dominant) return invalidateTarget('Nessuna superficie valida nel target.', 'no-surface');
     const rotation = orientationFromNormal(dominant.normal, instance.twistRadians);
     const validation = validatePose(instance, dominant.point, rotation, dominant.normal);
-    if (!validation.valid) return invalidateTarget('La presa non può essere collocata in questo punto.');
+    if (!validation.valid) {
+      const failure = poseFailure(validation.blocker);
+      return invalidateTarget(failure.message, failure.reason);
+    }
     physics.setKinematicTransform(instance.physics, dominant.point, rotation);
     instance.physicalState = 'attached';
     instance.attachmentNormal = dominant.normal.clone();
@@ -728,7 +756,7 @@ export async function createWallScene(
     return result('applied', 'Presa agganciata.');
   }
 
-  function invalidateTarget(message: string): SceneActionResult {
+  function invalidateTarget(message: string, reason?: SceneActionResult['reason']): SceneActionResult {
     targetInvalidUntil = performance.now() + 500;
     if (targetResetTimer !== null) clearTimeout(targetResetTimer);
     if (targetPreview) targetPreview = { ...targetPreview, feedback: 'invalid' };
@@ -740,7 +768,7 @@ export async function createWallScene(
       minorAxisRatio: 1,
       rotationRadians: 0,
     };
-    const outcome = result('invalid-target', message);
+    const outcome = result('invalid-target', message, reason);
     if (targetingShadow) setShadowColor(targetingShadow, 0xff3b30);
     notifyInteraction();
     targetResetTimer = setTimeout(() => {
@@ -797,18 +825,19 @@ export async function createWallScene(
     const candidate = instance.contactPoint.clone().add(desired);
     const origin = candidate.clone().addScaledVector(instance.currentNormal, 0.02);
     const hit = physics.castRayToWall(origin, instance.currentNormal.clone().negate(), 0.04);
-    if (!hit) return result('blocked', 'Limite della superficie raggiunto.');
+    if (!hit) return result('blocked', 'Limite della superficie raggiunto.', 'no-surface');
     const point = new Vector3(hit.point.x, hit.point.y, hit.point.z);
-    if (point.distanceTo(candidate) > 0.005) return result('blocked', 'Cambio di superficie raggiunto.');
+    if (point.distanceTo(candidate) > 0.005) return result('blocked', 'Cambio di superficie raggiunto.', 'surface-gap');
     const normal = resolveContactNormal(new Vector3(hit.normal.x, hit.normal.y, hit.normal.z), instance.currentNormal);
     if (normal.dot(instance.currentNormal) < 0) normal.negate();
     if (normal.angleTo(instance.attachmentNormal) > Math.PI / 36) {
-      return result('blocked', 'Cambio di inclinazione raggiunto.');
+      return result('blocked', 'Cambio di inclinazione raggiunto.', 'normal-limit');
     }
     const rotation = orientationFromNormal(normal, instance.twistRadians);
     const currentRotation = instance.physics.body.rotation();
-    const validFraction = maximumValidPoseFraction(instance, instance.contactPoint, currentRotation, point, rotation, normal);
-    if (validFraction <= 0) return result('blocked', 'Movimento bloccato da una collisione.');
+    const path = physics.maximumValidPoseFraction(instance.physics, instance.contactPoint, currentRotation, point, rotation);
+    const validFraction = path.fraction;
+    if (validFraction <= 0) return pathResult(path);
     if (validFraction < 1) {
       const partialPoint = instance.contactPoint.clone().lerp(point, validFraction);
       const partialNormal = instance.currentNormal.clone().lerp(normal, validFraction).normalize();
@@ -818,16 +847,29 @@ export async function createWallScene(
         currentRotation.z,
         currentRotation.w,
       ).slerp(rotation, validFraction);
-      physics.setKinematicTransform(instance.physics, partialPoint, partialRotation);
-      instance.currentNormal = partialNormal;
-      instance.contactPoint = partialPoint;
+      const partialHit = physics.castRayToWall(partialPoint.clone().addScaledVector(partialNormal, 0.02), partialNormal.clone().negate(), 0.04);
+      if (!partialHit) return result('blocked', 'Limite della superficie raggiunto.', 'no-surface');
+      const projected = new Vector3().copy(partialHit.point);
+      const projectedNormal = resolveContactNormal(new Vector3().copy(partialHit.normal), partialNormal);
+      if (projectedNormal.dot(partialNormal) < 0) projectedNormal.negate();
+      if (projected.distanceTo(partialPoint) > 0.005 || projectedNormal.angleTo(instance.attachmentNormal) > Math.PI / 36) return pathResult(path);
+      partialRotation.copy(orientationFromNormal(projectedNormal, instance.twistRadians));
+      const projectedPath = physics.maximumValidPoseFraction(instance.physics, instance.contactPoint, currentRotation, projected, partialRotation);
+      if (projectedPath.fraction < 1 || !validatePose(instance, projected, partialRotation, projectedNormal).valid) return pathResult(path);
+      physics.setKinematicTransform(instance.physics, projected, partialRotation);
+      instance.currentNormal = projectedNormal;
+      instance.contactPoint = projected;
+      instance.contactFeatureId = partialHit.featureId;
       physics.synchronizeRendering();
       render();
-      return result('blocked', 'Movimento arrestato all’ultima posizione valida.');
+      return pathResult(path);
     }
+    const endpoint = validatePose(instance, point, rotation, normal);
+    if (!endpoint.valid) return pathResult({ fraction: 0, blocker: endpoint.blocker, unresolved: physics.lastPoseDiagnostic?.uncertain ?? false });
     physics.setKinematicTransform(instance.physics, point, rotation);
     instance.currentNormal = normal;
     instance.contactPoint = point;
+    instance.contactFeatureId = hit.featureId;
     physics.synchronizeRendering();
     render();
     return result('applied', 'Presa spostata.');
@@ -840,6 +882,7 @@ export async function createWallScene(
     }
     const signedSteps = direction === 'clockwise' ? -Math.abs(steps) : Math.abs(steps);
     let applied = 0;
+    let blockedPath: PosePathValidation | null = null;
     for (let index = 0; index < Math.abs(signedSteps); index += 1) {
       const delta = Math.sign(signedSteps) * ROTATION_STEP_RADIANS;
       const current = instance.physics.body.rotation();
@@ -849,14 +892,31 @@ export async function createWallScene(
         delta,
       );
       const translation = instance.physics.body.translation();
-      if (!isPosePathValid(instance, translation, current, translation, next, instance.currentNormal)) break;
+      const path = physics.maximumValidPoseFraction(instance.physics, translation, current, translation, next);
+      if (path.fraction < 1) {
+        blockedPath = path;
+        if (path.fraction > 0) {
+          const partial = new Quaternion().copy(current).slerp(next, path.fraction);
+          if (validatePose(instance, translation, partial, instance.currentNormal).valid) {
+            physics.setKinematicTransform(instance.physics, translation, partial);
+            instance.twistRadians += delta * path.fraction;
+          }
+        }
+        break;
+      }
+      const endpoint = validatePose(instance, translation, next, instance.currentNormal);
+      if (!endpoint.valid) {
+        blockedPath = { fraction: 0, blocker: endpoint.blocker, unresolved: physics.lastPoseDiagnostic?.uncertain ?? false };
+        break;
+      }
       physics.setKinematicTransform(instance.physics, instance.physics.body.translation(), next);
       instance.twistRadians += delta;
       applied += 1;
     }
-    if (applied === 0) return result('blocked', 'Rotazione bloccata da una collisione.');
     physics.synchronizeRendering();
     render();
+    if (blockedPath) return pathResult(blockedPath);
+    if (applied === 0) return result('cancelled', 'Nessuna rotazione richiesta.', 'no-change');
     return result('applied', 'Presa ruotata.');
   }
 
@@ -883,7 +943,6 @@ export async function createWallScene(
     const instance = selectedInstance();
     if (!session || session.kind !== 'move' || session.pointerId !== pointerId
       || !instance || instance.id !== session.holdId || !instance.attachmentNormal) return;
-    session.requestedScreenPoint = point;
     const delta = new Vector2(point.x - session.pointerStartPoint.x, point.y - session.pointerStartPoint.y);
     const target = session.screenAxis ? (() => {
       const scalar = delta.dot(session.screenAxis!);
@@ -892,21 +951,25 @@ export async function createWallScene(
         y: session.startScreenPoint.y + session.screenAxis!.y * scalar,
       };
     })() : point;
+    session.requestedScreenPoint = target;
     const hit = raycastWallAt(target);
     if (hit) {
       const normal = resolveContactNormal(hit.normal, session.candidateNormal);
       if (normal.dot(hit.normal) < 0) normal.negate();
       session.candidatePosition.copy(hit.point);
       session.candidateNormal.copy(normal);
+      session.candidateFeatureId = hit.featureId;
       session.candidateRotation.copy(transportOrientationToNormal(session.startRotation, session.startNormal, normal));
       session.candidateTwist = twistFromOrientation(session.candidateRotation, normal);
       session.candidateScreenPoint = target;
       session.candidateEndpointAvailable = true;
+      session.shadow.visible = true;
       lastActionResult = result('previewing', 'Anteprima spostamento attiva.');
       applyShadowPose(session);
     } else {
       session.candidateEndpointAvailable = false;
-      lastActionResult = result('surface-limit', 'Nessuna superficie visibile nel punto richiesto.');
+      session.shadow.visible = false;
+      lastActionResult = result('surface-limit', 'Nessuna superficie visibile nel punto richiesto.', 'no-surface');
     }
     notifyInteraction();
     render();
@@ -919,27 +982,31 @@ export async function createWallScene(
     if (!session || session.kind !== 'move' || session.pointerId !== pointerId || !instance) {
       return result('not-available', 'Nessuna anteprima movimento attiva.');
     }
-    const valid = session.candidateEndpointAvailable && validatePose(
-      instance,
-      session.candidatePosition,
-      session.candidateRotation,
-      session.candidateNormal,
-    ).valid;
-    const changed = session.candidatePosition.distanceTo(session.startPosition) > 1e-8;
-    if (valid && changed) {
-      physics.setKinematicTransform(instance.physics, session.candidatePosition, session.candidateRotation);
-      instance.contactPoint = session.candidatePosition.clone();
-      instance.contactFeatureId = session.candidateFeatureId;
-      instance.currentNormal = session.candidateNormal.clone();
-      instance.attachmentNormal = session.candidateNormal.clone();
-      instance.twistRadians = session.candidateTwist;
-      physics.synchronizeRendering();
+    // Tornare al punto iniziale non e uno spostamento, neppure con l'errore numerico del raycast.
+    const changed = session.candidatePosition.distanceTo(session.startContactPoint) > 1e-8
+      && Math.hypot(session.requestedScreenPoint.x - session.startScreenPoint.x,
+        session.requestedScreenPoint.y - session.startScreenPoint.y) > 1e-6;
+    let outcome: SceneActionResult;
+    if (!session.candidateEndpointAvailable) {
+      outcome = result('invalid-endpoint', 'Nessuna superficie visibile. Movimento annullato.', 'no-surface');
+    } else if (!changed) {
+      outcome = result('cancelled', 'Nessuna variazione di posizione.', 'no-change');
+    } else {
+      const validation = validatePose(instance, session.candidatePosition, session.candidateRotation, session.candidateNormal);
+      if (validation.valid) {
+        physics.setKinematicTransform(instance.physics, session.candidatePosition, session.candidateRotation);
+        instance.contactPoint = session.candidatePosition.clone();
+        instance.contactFeatureId = session.candidateFeatureId;
+        instance.currentNormal = session.candidateNormal.clone();
+        instance.attachmentNormal = session.candidateNormal.clone();
+        instance.twistRadians = session.candidateTwist;
+        physics.synchronizeRendering();
+        outcome = result('committed', 'Spostamento applicato.');
+      } else {
+        const failure = poseFailure(validation.blocker);
+        outcome = result('invalid-endpoint', `${failure.message} Movimento annullato.`, failure.reason);
+      }
     }
-    const committed = valid && changed;
-    const outcome = result(
-      committed ? 'committed' : 'invalid-endpoint',
-      committed ? 'Spostamento applicato.' : 'Posizione non valida. Movimento annullato.',
-    );
     finishDragSession();
     render();
     if (performanceActive) endpointDurations.push(performance.now() - startedAt);
@@ -986,18 +1053,21 @@ export async function createWallScene(
     if (!session || session.kind !== 'rotate' || session.pointerId !== pointerId || !instance) {
       return result('not-available', 'Nessuna anteprima rotazione attiva.');
     }
-    const valid = validatePose(
-      instance,
-      session.candidatePosition,
-      session.candidateRotation,
-      session.candidateNormal,
-    ).valid;
-    if (valid) {
-      physics.setKinematicTransform(instance.physics, session.candidatePosition, session.candidateRotation);
-      instance.twistRadians = session.candidateTwist;
-      physics.synchronizeRendering();
+    let outcome: SceneActionResult;
+    if (Math.abs(session.candidateTwist - session.startTwist) < 1e-8) {
+      outcome = result('cancelled', 'Nessuna variazione di rotazione.', 'no-change');
+    } else {
+      const validation = validatePose(instance, session.candidatePosition, session.candidateRotation, session.candidateNormal);
+      if (validation.valid) {
+        physics.setKinematicTransform(instance.physics, session.candidatePosition, session.candidateRotation);
+        instance.twistRadians = session.candidateTwist;
+        physics.synchronizeRendering();
+        outcome = result('committed', 'Rotazione applicata.');
+      } else {
+        const failure = poseFailure(validation.blocker);
+        outcome = result('invalid-endpoint', `${failure.message} Rotazione annullata.`, failure.reason);
+      }
     }
-    const outcome = result(valid ? 'committed' : 'invalid-endpoint', valid ? 'Rotazione applicata.' : 'Rotazione non valida. Operazione annullata.');
     finishDragSession();
     render();
     if (performanceActive) endpointDurations.push(performance.now() - startedAt);
@@ -1152,62 +1222,13 @@ export async function createWallScene(
     return 48;
   }
 
-  function isPosePathValid(
-    instance: HoldSceneInstance,
-    fromPosition: { readonly x: number; readonly y: number; readonly z: number },
-    fromRotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number },
-    toPosition: { readonly x: number; readonly y: number; readonly z: number },
-    toRotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number },
-    outwardNormal: Vector3,
-  ): boolean {
-    const startPosition = new Vector3(fromPosition.x, fromPosition.y, fromPosition.z);
-    const endPosition = new Vector3(toPosition.x, toPosition.y, toPosition.z);
-    const startRotation = new Quaternion(fromRotation.x, fromRotation.y, fromRotation.z, fromRotation.w);
-    const endRotation = new Quaternion(toRotation.x, toRotation.y, toRotation.z, toRotation.w);
-    const steps = Math.max(
-      1,
-      Math.ceil(startPosition.distanceTo(endPosition) / 0.005),
-      Math.ceil(startRotation.angleTo(endRotation) / ROTATION_STEP_RADIANS),
-    );
-    for (let step = 1; step <= steps; step += 1) {
-      const fraction = step / steps;
-      if (!validatePose(
-        instance,
-        startPosition.clone().lerp(endPosition, fraction),
-        startRotation.clone().slerp(endRotation, fraction),
-        outwardNormal,
-      ).valid) return false;
-    }
-    return true;
-  }
-
-  function maximumValidPoseFraction(
-    instance: HoldSceneInstance,
-    fromPosition: Vector3,
-    fromRotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number },
-    toPosition: Vector3,
-    toRotation: Quaternion,
-    outwardNormal: Vector3,
-  ): number {
-    const startRotation = new Quaternion(fromRotation.x, fromRotation.y, fromRotation.z, fromRotation.w);
-    if (validatePose(instance, toPosition, toRotation, outwardNormal).valid) return 1;
-    const steps = Math.max(
-      1,
-      Math.ceil(fromPosition.distanceTo(toPosition) / 0.001),
-      Math.ceil(startRotation.angleTo(toRotation) / ROTATION_STEP_RADIANS),
-    );
-    let lastValid = 0;
-    for (let step = 1; step < steps; step += 1) {
-      const fraction = step / steps;
-      if (!validatePose(
-        instance,
-        fromPosition.clone().lerp(toPosition, fraction),
-        startRotation.clone().slerp(toRotation, fraction),
-        outwardNormal,
-      ).valid) break;
-      lastValid = fraction;
-    }
-    return lastValid;
+  /** Distingue una collisione identificata da un arresto numerico conservativo. */
+  function pathResult(path: PosePathValidation): SceneActionResult {
+    if (path.unresolved || !path.blocker) return result('blocked', 'Movimento arrestato: impossibile verificare un tratto del percorso.', 'path-unresolved');
+    return result('blocked', path.blocker === 'wall'
+      ? 'Movimento arrestato al contatto con la parete.'
+      : 'Movimento arrestato al contatto con un\'altra presa.',
+    path.blocker === 'wall' ? 'wall-collision' : 'hold-collision');
   }
 
   function validatePose(

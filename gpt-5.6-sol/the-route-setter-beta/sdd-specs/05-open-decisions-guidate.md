@@ -66,14 +66,14 @@ Decisione:
 
 ## DEC-007 - Surface lock
 
-Stato: CHIUSA.
+Stato: CHIUSA; applicabile ai soli click incrementali, come precisato da `DEC-024` e `C19`.
 
 Decisione:
 - la hold segue piccole variazioni curve;
 - confronto sempre con la normale memorizzata all'aggancio;
 - tolleranza iniziale 5 gradi;
 - oltre soglia il movimento si arresta, senza transizione automatica;
-- per cambiare superficie servono `Sgancia` e nuovo `Aggancia`.
+- per cambiare superficie usare il drag globale endpoint-only oppure `Sgancia` e nuovo `Aggancia`.
 
 ## DEC-008 - Sgancio
 
@@ -178,7 +178,7 @@ Stato: CHIUSA.
 Decisione:
 - il drag diretto sulla hold e disponibile soltanto dopo aver attivato `Sposta`;
 - il click ordinario continua a selezionare la hold;
-- il drag dalla hold e libero in due dimensioni screen-space e conserva l'offset pointer-contact point;
+- il drag dalla hold e libero in due dimensioni screen-space; per `DEC-024` il contact point coincide col puntatore senza conservare l'offset iniziale;
 - il drag dalle frecce resta vincolato alla rispettiva direzione;
 - click singoli sulle frecce restano micro-spostamenti da 1 cm.
 
@@ -253,3 +253,55 @@ Decisione:
 - nel drag libero il contact point coincide col puntatore e l'orientamento viene trasportato sulla nuova normale con la rotazione minima;
 - non viene introdotta una nuova modalita di movimento per le hold detached;
 - spawn, camera e popup detached mantengono il comportamento consolidato precedente.
+
+## DEC-025 - Primo gruppo fisica, diagnostica e limiti numerici
+
+Stato: perimetro del primo gruppo DEFINITO su richiesta utente; build e verifiche funzionali finali CONFERMATE, follow-up numerico APERTO. Suite prestazionale headless FALLITA, certificazione hardware non disponibile. Non attesta la chiusura di tutti i difetti fisici.
+
+Prevalenza corrente: `DEC-026` sostituisce soltanto la prescrizione di tolleranza geometrica unica `1 mm` riportata sotto. Il resto della decisione, l'epsilon e tutti gli esiti storici restano invariati.
+
+Decisione:
+- includere tolleranza/diedri, continuita dei click di traslazione e rotazione, diagnostica locale e regressioni; differire interventi backend/catalogo e gestione globale errori;
+- allineare `C19` ai soli click; mantenere drag globale endpoint-only e contact point sotto al puntatore nel drag libero, senza offset iniziale;
+- validare la posa originale tramite `collider.contactShape` contro l'intero TriMesh, senza shift uscente; corroborare i contatti negativi con intersezione nativa;
+- mantenere tolleranza geometrica `0.001 m` ed epsilon numerico distinto `2e-6 m`; usare normalizzazione di fattore `100` solo nelle query fra coppie convesse supportate, con gli stessi vertici hull e indici precalcolati, senza generazione frontend o modifica della geometria;
+- per i click usare shape cast solo a rotazione fissa e da partenza separata, con arresto al primo contatto; contatti iniziali e rotazione sono gestiti dagli intervalli ricorsivi basati su clearance contro massimo moto dei punti (traslazione piu raggio per angolo). Budget `512`, bound minimo `2e-6 m`, prefisso conservativo se irrisolto, non semplice campionamento di endpoint;
+- usare la broadphase AABB nativa con semiestensione `raggio + prediction` per le query di posa; esporre `lastActionResult.reason` e `lastPoseDiagnostic.uncertain` nello snapshot read-only, senza sentinelle infinite, log persistenti o rete per frame. Esito incerto -> `path-unresolved` nella UI, non collisione accertata;
+- associare `poseValidation.test.ts` e `realWall.test.ts` ai requisiti esistenti: casi sintetici, pavimento/pinna nello stesso collider con contatto iniziale, 40 collider lontani senza narrowphase aggiuntiva, determinismo, query senza mutazioni/rete e asset reali invariati. Esiti finali confermati: 215/215 unitari in 11 file, 31/31 E2E, zero errori pageerror/console/HTTP nella traccia e build frontend superata; backend invariato, 33/33 dalla verifica precedente;
+- distinguere il benchmark Node su 40 hold reali (mediane endpoint 1.7-6.3 ms, massimo 8.4 ms; mediane click 24-59 ms, massimo 84 ms) dalla suite prestazionale headless SwiftShader FALLITA: 3 FPS contro target 30, long task massimo 829 ms, heartbeat 748 ms. Rendering software, nessuna evidenza su hardware target; nessuna delle due misure certifica le prestazioni richieste.
+
+Limiti e follow-up:
+- Rapier `0.12.0` puo sottostimare la profondita per faccia vicino alle giunzioni interne dei triangoli; la corroborazione di intersezione non corregge necessariamente tale profondita;
+- il contenimento completo di una presa in un TriMesh chiuso, senza intersecarne la superficie, non viene rilevato: il TriMesh non fornisce qui un test generale di volume solido;
+- il bound del moto e l'arresto conservativo degli intervalli irrisolti non certificano l'accuratezza delle query native su geometrie arbitrarie degeneri, ne risolvono tutti i casi numerici. La regressione pavimento/pinna passa, ma non elimina il limite nativo dei cast da contatto iniziale, gestiti tramite intervalli;
+- riprodurre e valutare separatamente gli edge case residui prima di dichiararli risolti. Se occorre un upgrade Rapier o un cambio di rappresentazione fisica, richiedere approvazione utente prima di ampliare il perimetro; per upgrade mantenere PR dedicata, pinning, lockfile, nota compatibilita e suite completa secondo `OPEN-003`;
+- non sovrascrivere report storici; il report previsto e `phases-outcome/Physics_diagnostics_group_1_done.md`, da produrre separatamente da questo aggiornamento documentale.
+
+## DEC-026 - Tolleranza parete configurabile e separata dalle prese
+
+Stato: decisione APPROVATA, implementazione e verifiche finali CONFERMATE dall'utente: unitari `331/331` in `12` file, E2E `43/43` superati. Verificata anche la configurazione su build produzione in dist temporanea, modificando il file reale `5 -> 3 -> 5` e ricaricando senza rebuild fra le modifiche. Gli esiti del primo gruppo e delle fasi precedenti non vengono riscritti; il follow-up numerico resta aperto.
+
+Decisione:
+- sostituire soltanto la parte tolleranza di `DEC-025`: parete configurabile `1..10 mm`, estremi inclusi e decimali ammessi, default `5 mm`; fra prese `1 mm` immutabile; epsilon numerico `2e-6 m` invariato;
+- aggregare in `PhysicsWorld` il minimo per contatto di `distance + tolerance` sia negli endpoint sia negli intervalli click, non scegliere la distanza grezza piu profonda prima di applicare una soglia unica. La diagnostica `toleranceMeters` deve riferirsi al contatto governante, non necessariamente al piu profondo;
+- precisazione diagnostica finale: una violazione accertata della soglia prevale sull'incertezza di un altro collider, con `blocker`, handle, penetrazione, tolleranza e `uncertain: false` riferiti allo stesso contatto. In assenza di violazioni accertate, l'incertezza resta bloccante con diagnostica coerente e `path-unresolved`; non e una collisione provata. Regressione confermata nei due ordini broadphase, anche rimuovendo il collider della violazione;
+- mantenere gli sweep da partenza separata con arresto prima del primo contatto, anche verso il pavimento; non usare la tolleranza per avanzare oltre il TOI. Contatti iniziali e rotazione restano gestiti dagli intervalli; surface-lock `5 gradi`, gap `5 mm`, budget `512`, bound minimo `2e-6 m` e drag endpoint-only invariati;
+- usare il file runtime `source/frontend/public/physics-config.json` con contenuto iniziale `{"wallPenetrationToleranceMm":5}`. Numero JSON finito senza virgolette, punto decimale (esempio `7.5`), niente commenti o altre chiavi; nessuna configurazione della soglia hold;
+- leggere una sola volta al bootstrap con `cache: 'no-store'`; nessuna rilettura durante le interazioni. File invalido/indisponibile blocca l'avvio senza default silenzioso, con errore gestito nella pagina e senza `pageerror` non gestiti. La correzione e circoscritta al bootstrap della configurazione, non a backend/catalogo o gestione globale errori;
+- in sviluppo modificare il file `public` servito da Vite e ricaricare, senza compilazione o riavvio backend/frontend. Vite puo ricaricare automaticamente alla modifica: esportare prima di editare. Reload perde la sessione; JPG conserva solo un'immagine, non una tracciatura editabile;
+- in produzione installazione/build/deploy iniziali del codice sono necessari. Successivamente modificare il `dist/physics-config.json` distribuito e ricaricare non richiede rebuild/riavvio con server statico. Modificare soltanto il sorgente `public` richiede rebuild o copia nel deploy; mantenere li il valore permanente perche il build successivo sovrascrive `dist`. Configurare server/proxy/cache per rispettare `no-store`;
+- esporre in sola lettura `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm`, normalmente `{ wall: 5, holds: 1 }`, e `lastPoseDiagnostic.toleranceMeters`; nessun controllo live tramite console o logging/rete per frame;
+- proporre all'utente prove a `1 mm` (baseline), `3 mm` (conservativa), `5 mm` (raccomandata), `7.5` e `10 mm` (esplorative). Non aumentare la soglia fra prese o il limite angolare per mascherare difetti.
+
+Evidenze reali verificate e comunicate dall'utente, con asset e collider Hold1/Hold2 invariati:
+
+| Parete mm | Baseline laterale accettata, su 9 pose per hold | Griglia accettata, su 52 pose per hold (Hold1 / Hold2) |
+|---|---|---|
+| 1 | 3 / 9 ciascuna | 8 / 7 |
+| 3 | 7 / 9 ciascuna | 29 / 29 |
+| 5 | 9 / 9 ciascuna | 45 / 45 |
+| 10 | 9 / 9 ciascuna | 46 / 46 |
+
+Gli scontri profondi parete di circa `120 mm` (Hold1) e `200 mm` (Hold2) restano bloccati a tutte le soglie verificate. Sui target prima rifiutati con profondita circa `4 mm`, passi locali `+/-1 cm` e twist `+/-1 grado` falliscono a `1` e `3 mm`, passano a `5` e `10 mm`. La griglia e una misura comunicata dall'utente, non una dichiarazione di copertura integrale della suite o di ogni superficie; risultati e provenienza in `docs/test-automatici.md`.
+
+Limiti: nessuna garanzia di agganciabilita di tutte le superfici o di compensazione di tutte le imperfezioni di modelli da foto/fotogrammetria. Restano i limiti Rapier e il follow-up di `DEC-025`; nessun upgrade, modifica asset o intervento generale backend implicito. Il report finale e `phases-outcome/Wall_tolerance_configuration_done.md`; backend non modificato, `33/33` resta solo risultato storico. I report storici restano intatti.

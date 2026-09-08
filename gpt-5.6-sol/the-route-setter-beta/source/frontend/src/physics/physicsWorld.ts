@@ -1,7 +1,8 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
-import type { Object3D, Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3, type Object3D } from 'three';
 import type { WallTriMeshData } from '../scene/wallTriMesh';
 import { initializeRapier, type RapierApi } from './rapierRuntime';
+import { DEFAULT_PHYSICS_CONFIG, HOLD_PENETRATION_TOLERANCE_METERS, parsePhysicsConfig, type PhysicsConfig } from '../config/physicsConfig';
 import {
   synchronizePhysicsToRendering,
   type PhysicsRenderBinding,
@@ -10,7 +11,26 @@ import {
 const ZERO_GRAVITY = Object.freeze({ x: 0, y: 0, z: 0 });
 const CHARACTER_OFFSET_METERS = 0.001;
 const COLLISION_MARGIN_METERS = 0.001;
-export const MAX_PENETRATION_METERS = 0.001;
+// Margine di arrotondamento WASM float32, distinto dalla tolleranza geometrica.
+export const CONTACT_NUMERICAL_EPSILON = 0.000002;
+
+/** Arresto conservativo di una trasformazione incrementale, senza modificare il corpo. */
+export interface PosePathValidation {
+  readonly fraction: number;
+  readonly blocker: PoseValidation['blocker'];
+  readonly unresolved: boolean;
+}
+
+/** Ultima query endpoint, disponibile per il troubleshooting senza log per frame. */
+export interface PoseDiagnostic {
+  readonly position: readonly number[];
+  readonly rotation: readonly number[];
+  readonly blocker: PoseValidation['blocker'];
+  readonly penetrationMeters: number;
+  readonly colliderHandle: number | null;
+  readonly uncertain: boolean;
+  readonly toleranceMeters: number;
+}
 
 /** Corpo cinematico predisposto per una futura presa e collegabile alla relativa mesh grafica. */
 export interface KinematicPhysicsObject {
@@ -37,14 +57,19 @@ export class PhysicsWorld {
   readonly wallBody: RAPIER.RigidBody;
   readonly wallCollider: RAPIER.Collider;
   readonly characterController: RAPIER.KinematicCharacterController;
+  readonly wallPenetrationToleranceMeters: number;
 
   private readonly rapier: RapierApi;
   private readonly bindings = new Set<PhysicsRenderBinding>();
   private disposed = false;
+  private readonly normalizedShapes = new Map<number, RAPIER.Shape>();
+  private readonly colliderRadii = new Map<number, number>();
+  lastPoseDiagnostic: PoseDiagnostic | null = null;
 
   /** Crea mondo, parete TriMesh statica e controller move-and-slide. */
-  private constructor(rapier: RapierApi, triMesh: WallTriMeshData) {
+  private constructor(rapier: RapierApi, triMesh: WallTriMeshData, config: PhysicsConfig) {
     this.rapier = rapier;
+    this.wallPenetrationToleranceMeters = config.wallPenetrationToleranceMm / 1000;
     this.world = new rapier.World(ZERO_GRAVITY);
     this.wallBody = this.world.createRigidBody(rapier.RigidBodyDesc.fixed());
     this.wallCollider = this.world.createCollider(
@@ -62,9 +87,10 @@ export class PhysicsWorld {
   }
 
   /** Inizializza Rapier WASM e crea la fondazione fisica per il TriMesh indicato. */
-  static async create(triMesh: WallTriMeshData): Promise<PhysicsWorld> {
+  static async create(triMesh: WallTriMeshData, config: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): Promise<PhysicsWorld> {
     validateTriMesh(triMesh);
-    return new PhysicsWorld(await initializeRapier(), triMesh);
+    const validatedConfig = parsePhysicsConfig(config);
+    return new PhysicsWorld(await initializeRapier(), triMesh, validatedConfig);
   }
 
   /** Predispone un corpo cinematico CCD con collider già calcolato, senza generare hull. */
@@ -157,7 +183,7 @@ export class PhysicsWorld {
     };
   }
 
-  /** Valida una posa completa consentendo il contatto e rifiutando penetrazioni oltre 1 mm. */
+  /** Valida ogni contatto con la sua soglia: parete configurabile, altre prese sempre 1 mm. */
   validatePose(
     object: KinematicPhysicsObject,
     translation: RAPIER.Vector,
@@ -166,59 +192,192 @@ export class PhysicsWorld {
   ): PoseValidation {
     this.ensureActive();
     this.world.updateSceneQueries();
-    if (outwardNormal) {
-      const length = Math.hypot(outwardNormal.x, outwardNormal.y, outwardNormal.z);
-      const offset = length > 0 ? MAX_PENETRATION_METERS / length : 0;
-      let wallIntersects = false;
-      this.world.intersectionsWithShape(
-        {
-          x: translation.x + outwardNormal.x * offset,
-          y: translation.y + outwardNormal.y * offset,
-          z: translation.z + outwardNormal.z * offset,
-        },
-        rotation,
-        object.collider.shape,
-        (candidate) => {
-          if (candidate.handle !== this.wallCollider.handle) return true;
-          wallIntersects = true;
-          return false;
-        },
-        undefined,
-        undefined,
-        object.collider,
-      );
-      if (wallIntersects) return { valid: false, blocker: 'wall' };
-    } else {
-      const wallContact = object.collider.shape.contactShape(
-        translation,
-        rotation,
-        this.wallCollider.shape,
-        this.wallCollider.translation(),
-        this.wallCollider.rotation(),
-        MAX_PENETRATION_METERS,
-      );
-      if (wallContact && wallContact.distance < -MAX_PENETRATION_METERS) {
-        return { valid: false, blocker: 'wall' };
-      }
+    if (outwardNormal && (!Number.isFinite(Math.hypot(outwardNormal.x, outwardNormal.y, outwardNormal.z))
+      || Math.hypot(outwardNormal.x, outwardNormal.y, outwardNormal.z) < 1e-8)) {
+      throw new Error('La normale della posa non e valida.');
     }
-    let blocker: PoseValidation['blocker'] = null;
-    this.world.intersectionsWithShape(translation, rotation, object.collider.shape, (candidate) => {
-      if (candidate.handle === this.wallCollider.handle) return true;
-      const contact = object.collider.shape.contactShape(
-        translation,
-        rotation,
-        candidate.shape,
-        candidate.translation(),
-        candidate.rotation(),
-        MAX_PENETRATION_METERS,
-      );
-      if (contact && contact.distance < -MAX_PENETRATION_METERS) {
-        blocker = 'hold';
-        return false;
-      }
-      return true;
-    }, undefined, undefined, object.collider);
+    const contact = this.poseClearance(object, translation, rotation, this.wallPenetrationToleranceMeters);
+    const blocker = contact.uncertain || contact.margin < -CONTACT_NUMERICAL_EPSILON
+      ? contact.blocker : null;
+    this.lastPoseDiagnostic = {
+      position: [translation.x, translation.y, translation.z],
+      rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+      blocker,
+      penetrationMeters: Math.max(0, -contact.distance),
+      colliderHandle: contact.handle,
+      uncertain: contact.uncertain,
+      toleranceMeters: contact.tolerance,
+    };
     return { valid: blocker === null, blocker };
+  }
+
+  /** Misura la posa originale contro tutti i collider, senza offset legati al pannello. */
+  private poseClearance(
+    object: KinematicPhysicsObject,
+    translation: RAPIER.Vector,
+    rotation: RAPIER.Rotation,
+    prediction: number,
+  ): { distance: number; margin: number; tolerance: number; blocker: PoseValidation['blocker']; handle: number | null; uncertain: boolean } {
+    let distance = prediction;
+    let tolerance = HOLD_PENETRATION_TOLERANCE_METERS;
+    let margin = prediction + tolerance;
+    let blocker: PoseValidation['blocker'] = null;
+    let handle: number | null = null;
+    const uncertainContacts: Array<{ distance: number; tolerance: number; blocker: PoseValidation['blocker']; handle: number }> = [];
+    const extent = this.colliderRadius(object.collider) + prediction;
+    this.world.collidersWithAabbIntersectingAabb(translation, { x: extent, y: extent, z: extent }, (candidate) => {
+      if (candidate.handle === object.collider.handle) return true;
+      const shape = object.collider.shape;
+      // Normalizzazione solo delle query convex/convex: evita l'early exit GJK su collider millimetrici.
+      // Nessuna rigenerazione dell'hull: si scalano gli stessi vertici precalcolati.
+      const normalizedMoving = candidate.handle === this.wallCollider.handle ? null : this.normalizedShape(object.collider);
+      const normalizedOther = normalizedMoving ? this.normalizedShape(candidate) : null;
+      const relative = new Vector3().copy(translation).sub(candidate.translation()).multiplyScalar(100);
+      const contact = normalizedMoving && normalizedOther
+        ? normalizedOther.contactShape(ZERO_GRAVITY, candidate.rotation(), normalizedMoving, relative, rotation, prediction * 100)
+        : candidate.contactShape(shape, translation, rotation, prediction);
+      const contactDistance = contact ? contact.distance / (normalizedMoving && normalizedOther ? 100 : 1) : prediction;
+      // Le query di contatto possono produrre profondita spurie su triangoli molto allungati.
+      // Un contatto negativo deve essere confermato dalla query nativa di intersezione.
+      const intersects = normalizedMoving && normalizedOther
+        ? normalizedOther.intersectsShape(ZERO_GRAVITY, candidate.rotation(), normalizedMoving, relative, rotation)
+        : candidate.intersectsShape(shape, translation, rotation);
+      const contradictory = (intersects && (!contact || contactDistance > CONTACT_NUMERICAL_EPSILON))
+        || (contactDistance < -CONTACT_NUMERICAL_EPSILON && !intersects);
+      const candidateTolerance = candidate.handle === this.wallCollider.handle
+        ? this.wallPenetrationToleranceMeters : HOLD_PENETRATION_TOLERANCE_METERS;
+      // Non trasformare una risposta contraddittoria in una clearance positiva certificata.
+      if (contradictory) {
+        const candidateBlocker = candidate.handle === this.wallCollider.handle ? 'wall' : 'hold';
+        if (!uncertainContacts[0] || candidate.handle < uncertainContacts[0].handle) {
+          uncertainContacts[0] = { distance: contactDistance, tolerance: candidateTolerance, blocker: candidateBlocker, handle: candidate.handle };
+        }
+        return true;
+      }
+      const measured = contactDistance;
+      const candidateMargin = measured + candidateTolerance;
+      // Il contatto piu profondo non e necessariamente quello che supera la propria soglia.
+      if (candidateMargin >= margin) return true;
+      distance = measured;
+      tolerance = candidateTolerance;
+      margin = candidateMargin;
+      blocker = candidate.handle === this.wallCollider.handle ? 'wall' : 'hold';
+      handle = candidate.handle;
+      return true;
+    });
+    // Una violazione accertata prevale sull'incertezza di un altro collider; i campi restano coerenti.
+    if (uncertainContacts[0] && margin >= -CONTACT_NUMERICAL_EPSILON) {
+      return { ...uncertainContacts[0], margin: 0, uncertain: true };
+    }
+    return { distance, margin, tolerance, blocker, handle, uncertain: false };
+  }
+
+  /** Raggio conservativo intorno al pivot per broad phase e massimo spostamento rotazionale. */
+  private colliderRadius(collider: RAPIER.Collider): number {
+    const cached = this.colliderRadii.get(collider.handle);
+    if (cached !== undefined) return cached;
+    const shape = collider.shape;
+    let radius = Infinity;
+    if (shape.type === this.rapier.ShapeType.ConvexPolyhedron) {
+      const vertices = (shape as RAPIER.ConvexPolyhedron).vertices;
+      radius = 0;
+      for (let i = 0; i < vertices.length; i += 3) radius = Math.max(radius, Math.hypot(vertices[i], vertices[i + 1], vertices[i + 2]));
+    } else if (shape.type === this.rapier.ShapeType.Cuboid) {
+      const half = (shape as RAPIER.Cuboid).halfExtents;
+      radius = Math.hypot(half.x, half.y, half.z);
+    } else if (shape.type === this.rapier.ShapeType.Ball) radius = (shape as RAPIER.Ball).radius;
+    this.colliderRadii.set(collider.handle, radius);
+    return radius;
+  }
+
+  /** Memorizza copie geometriche scalate per le query native, senza aggiungerle al mondo. */
+  private normalizedShape(collider: RAPIER.Collider): RAPIER.Shape | null {
+    const cached = this.normalizedShapes.get(collider.handle);
+    if (cached) return cached;
+    const source = collider.shape;
+    let scaled: RAPIER.Shape;
+    if (source.type === this.rapier.ShapeType.Cuboid) {
+      const half = (source as RAPIER.Cuboid).halfExtents;
+      scaled = new this.rapier.Cuboid(half.x * 100, half.y * 100, half.z * 100);
+    } else if (source.type === this.rapier.ShapeType.Ball) {
+      scaled = new this.rapier.Ball((source as RAPIER.Ball).radius * 100);
+    } else if (source.type === this.rapier.ShapeType.ConvexPolyhedron) {
+      const convex = source as RAPIER.ConvexPolyhedron;
+      scaled = new this.rapier.ConvexPolyhedron(convex.vertices.map(value => value * 100), convex.indices);
+    } else return null;
+    this.normalizedShapes.set(collider.handle, scaled);
+    return scaled;
+  }
+
+  /**
+   * Certifica intervalli mediante distanza Rapier e massimo spostamento di ogni punto del collider.
+   * La suddivisione include la rotazione: endpoint liberi non permettono di saltare un ostacolo.
+   * Un intervallo non risolto entro il budget viene bloccato, mai accettato per campionamento.
+   */
+  maximumValidPoseFraction(
+    object: KinematicPhysicsObject,
+    fromPosition: RAPIER.Vector,
+    fromRotation: RAPIER.Rotation,
+    toPosition: RAPIER.Vector,
+    toRotation: RAPIER.Rotation,
+  ): PosePathValidation {
+    this.ensureActive();
+    this.world.updateSceneQueries();
+    const start = new Vector3().copy(fromPosition);
+    const end = new Vector3().copy(toPosition);
+    const rotationStart = new Quaternion().copy(fromRotation);
+    const rotationEnd = new Quaternion().copy(toRotation);
+    const shape = object.collider.shape;
+    const radius = this.colliderRadius(object.collider);
+    if (!Number.isFinite(radius)) {
+      return { fraction: 0, blocker: null, unresolved: true };
+    }
+    const travel = start.distanceTo(end) + radius * rotationStart.angleTo(rotationEnd);
+    if (travel < 1e-12) {
+      const pose = this.validatePose(object, toPosition, toRotation);
+      return { fraction: pose.valid ? 1 : 0, blocker: pose.blocker, unresolved: false };
+    }
+    let sweepLimit = 1;
+    let sweepBlocker: PoseValidation['blocker'] = null;
+    const displacement = end.clone().sub(start);
+    if (displacement.lengthSq() > 1e-16 && rotationStart.angleTo(rotationEnd) < 1e-8) {
+      const sweepCenter = start.clone().lerp(end, 0.5);
+      const extent = radius + displacement.length() / 2 + CONTACT_NUMERICAL_EPSILON;
+      this.world.collidersWithAabbIntersectingAabb(sweepCenter, { x: extent, y: extent, z: extent }, (candidate) => {
+        if (candidate.handle === object.collider.handle) return true;
+        const initialContact = candidate.contactShape(shape, start, rotationStart, CONTACT_NUMERICAL_EPSILON);
+        if (initialContact && initialContact.distance <= CONTACT_NUMERICAL_EPSILON) return true;
+        const hit = candidate.castShape(
+          { x: 0, y: 0, z: 0 }, shape, start, rotationStart, displacement, 1, false,
+        );
+        // I contatti gia presenti (appoggio/tangente) sono verificati dagli intervalli sotto.
+        if (hit && hit.toi > 1e-6 && hit.toi < sweepLimit) {
+          sweepLimit = Math.max(0, hit.toi - CONTACT_NUMERICAL_EPSILON / travel);
+          sweepBlocker = candidate.handle === this.wallCollider.handle ? 'wall' : 'hold';
+        }
+        return true;
+      });
+    }
+    const pending: Array<readonly [number, number]> = [[0, sweepLimit]];
+    let fraction = 0;
+    let blocker: PoseValidation['blocker'] = null;
+    for (let queries = 0; pending.length > 0 && queries < 512; queries += 1) {
+      const [a, b] = pending.pop()!;
+      const mid = (a + b) / 2;
+      const bound = travel * (b - a) / 2;
+      const contact = this.poseClearance(object, start.clone().lerp(end, mid), rotationStart.clone().slerp(rotationEnd, mid), bound + this.wallPenetrationToleranceMeters);
+      if (contact.uncertain) return { fraction, blocker: contact.blocker, unresolved: true };
+      if (contact.margin >= bound + CONTACT_NUMERICAL_EPSILON) {
+        fraction = b;
+        continue;
+      }
+      blocker = contact.blocker;
+      if (bound <= CONTACT_NUMERICAL_EPSILON) {
+        return { fraction, blocker, unresolved: contact.margin >= -CONTACT_NUMERICAL_EPSILON };
+      }
+      pending.push([mid, b], [a, mid]);
+    }
+    return { fraction, blocker: fraction === 1 ? null : sweepBlocker ?? blocker, unresolved: pending.length > 0 };
   }
 
   /** Verifica una trasformazione candidata contro le altre hold, escludendo la parete. */
@@ -339,6 +498,8 @@ export class PhysicsWorld {
   /** Rimuove corpo e collider associati a un'istanza che lascia la scena. */
   removeKinematicObject(object: KinematicPhysicsObject): void {
     this.ensureActive();
+    this.normalizedShapes.delete(object.collider.handle);
+    this.colliderRadii.delete(object.collider.handle);
     this.world.removeRigidBody(object.body);
   }
 
@@ -356,6 +517,8 @@ export class PhysicsWorld {
     }
 
     this.bindings.clear();
+    this.normalizedShapes.clear();
+    this.colliderRadii.clear();
     this.world.removeCharacterController(this.characterController);
     this.world.free();
     this.disposed = true;

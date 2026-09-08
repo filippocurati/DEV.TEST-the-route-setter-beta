@@ -216,7 +216,31 @@ position = punto candidato
 rotation = align(local +Z, normal) + twist
 ```
 
-La trasformazione detached-target e un teletrasporto editoriale: il percorso non viene interrogato. La posa finale viene validata mediante il Convex Hull contro il TriMesh parete e tutti i collider hold. Il contatto e valido e la penetrazione massima tollerata e `0.001 m`, centralizzata. Una posa valida viene applicata atomicamente; una posa invalida non modifica corpo, mesh o stato.
+La trasformazione detached-target e un teletrasporto editoriale: il percorso non viene interrogato. La posa finale viene validata mediante il Convex Hull contro il TriMesh parete e tutti i collider hold. Il contatto e valido. Secondo `DEC-026`, `wallPenetrationToleranceMeters = wallPenetrationToleranceMm / 1000` (intervallo `0.001..0.010 m`, default `0.005 m`), mentre `HOLD_PENETRATION_TOLERANCE_METERS = 0.001 m` resta immutabile. `CONTACT_NUMERICAL_EPSILON = 2e-6 m` resta distinto e invariato. Ogni contatto contribuisce `margin = distance + tolerance`; governa il minimo di questi margini, non il contatto con la distanza grezza piu profonda. Il rifiuto avviene per `minMargin < -2e-6 m` oppure per esito incerto. Una posa valida viene applicata atomicamente; una posa invalida non modifica corpo, mesh o stato.
+
+`PhysicsWorld.poseClearance` seleziona i candidati con la broadphase nativa `collidersWithAabbIntersectingAabb`, AABB centrata sulla posa con semiestensione `colliderRadius + prediction`, quindi usa `candidate.contactShape` sulla posa originale contro l'intero collider TriMesh, senza offset uscente o selezione di un solo pannello. Le contraddizioni fra contatto e `intersectsShape` (intersezione senza contatto o con distanza positiva oltre epsilon; distanza negativa oltre epsilon senza intersezione) sono conservate separatamente dai contatti confermati. Se il margine minimo confermato viola la soglia oltre epsilon, tale violazione prevale sull'incertezza di un altro collider: `uncertain = false` e tutti i campi diagnostici appartengono al contatto governante. Altrimenti, in presenza di contraddizioni, si seleziona deterministicamente il collider incerto con handle minore: `uncertain = true`, margine zero, distanza riportata dalla query (o prediction in assenza di contatto), soglia e handle dello stesso collider; posa rifiutata e percorso irrisolto, senza sentinelle infinite. Per le sole coppie convex/convex supportate (ConvexPolyhedron, Cuboid, Ball), le query usano copie scalate di fattore `100` e traslazioni relative, riportando le distanze in metri. Gli hull mantengono gli stessi vertici precalcolati e indici: non vengono generati nuovi hull ne aggiunti collider al mondo. Asset, geometria renderizzata e collider fisici restano invariati.
+
+Per gli endpoint `prediction` e la tolleranza parete, che e sempre almeno quella fra prese; per gli intervalli e `bound + wallPenetrationToleranceMeters`. Distanza, soglia e dati diagnostici del contatto governante devono restare associati: una parete a `-4 mm` con soglia `5 mm` non puo mascherare una hold a `-2 mm` con soglia `1 mm`. `lastPoseDiagnostic.toleranceMeters` descrive la soglia scelta; `penetrationMeters` non e una ricerca indipendente della massima profondita grezza. Le contraddizioni restano bloccanti indipendentemente dalle tolleranze.
+
+Limiti noti di Rapier `0.12.0`: la profondita per faccia vicino alle giunzioni interne dei triangoli puo essere sottostimata anche con conferma di intersezione; il contenimento completo dentro un TriMesh chiuso senza intersezione superficiale non viene rilevato. Queste query non costituiscono una certificazione generale per geometrie arbitrarie degeneri o volumi solidi (`DEC-025`). La configurazione (`DEC-026`) non garantisce tutte le superfici o la compensazione di tutte le imperfezioni fotografiche/fotogrammetriche.
+
+#### Configurazione runtime delle tolleranze
+
+Il file sorgente `source/frontend/public/physics-config.json` contiene inizialmente:
+
+```json
+{
+  "wallPenetrationToleranceMm": 5
+}
+```
+
+`src/config/physicsConfig.ts` valida un oggetto con questa sola chiave e numero finito in `1..10`, estremi inclusi, senza arrotondare i decimali (esempio `7.5`). JSON stretto: valore senza virgolette, punto decimale, niente commenti o chiavi aggiuntive. La soglia hold non e configurabile. Il bootstrap in `main.ts` attende una sola `loadPhysicsConfig()` con fetch di `${import.meta.env.BASE_URL}physics-config.json` e `cache: 'no-store'`, quindi passa il valore immutabile a `createWallScene` e `PhysicsWorld`. Non e un import compilato ne una chiamata backend o per frame. I default disponibili per costruzioni dirette/test non sono un fallback del bootstrap browser.
+
+HTTP non riuscito, rete, parsing o validazione falliti impediscono la creazione della scena e mostrano un errore gestito nella pagina, senza dettagli grezzi e senza `pageerror` non gestiti. Non avviare con default silenzioso. Il perimetro e questo errore di configurazione, non una revisione generale del backend o della gestione globale errori.
+
+In sviluppo Vite serve `public`: modificare il file e ricaricare applica il valore senza compilazione o riavvio backend/frontend. Vite puo ricaricare automaticamente alla modifica: esportare il JPG prima di editare; reload perde la sessione e JPG non conserva lo stato editabile. Per produzione occorre prima installare/buildare/distribuire il codice della funzionalita; poi il file effettivamente servito e `dist/physics-config.json` nel deploy. Su server statico modificarlo e ricaricare non richiede rebuild o riavvio. Modificare solo `public` richiede rebuild o copia nel deploy; il build successivo sovrascrive `dist`, percio il valore permanente va conservato nel sorgente. Configurare server/proxy/cache per `Cache-Control: no-store` su questo URL. Procedura operativa in `docs/applicazione.md`.
+
+Lo snapshot read-only `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm` mostra `{ wall: 5, holds: 1 }` con il file iniziale; `lastPoseDiagnostic.toleranceMeters` mostra la soglia del contatto governante, non necessariamente il piu profondo.
 
 ### 7.4 Sgancio
 
@@ -250,7 +274,7 @@ Per ogni click singolo:
 6. verificare il percorso del Convex Hull e la posa finale;
 7. applicare la massima frazione valida o arrestare il passo.
 
-Il confronto con `attachmentNormal`, non con la sola normale del passo precedente, impedisce di attraversare gradualmente un cambio di inclinazione accumulando piccole variazioni. La normale corrente puo invece variare entro soglia per seguire una curva senza distacco.
+Il confronto con `attachmentNormal`, non con la sola normale del passo precedente, impedisce di attraversare gradualmente un cambio di inclinazione accumulando piccole variazioni. La normale corrente puo invece variare entro soglia per seguire una curva senza distacco. Il gap massimo fra candidato e punto riproiettato resta `0.005 m` (`5 mm`), anche per la riproiezione del prefisso parziale; non dipende dalla tolleranza parete. Gap `5 mm` e limite angolare `5 gradi` non cambiano con `DEC-026`.
 
 ### 7.6 Drag transazionale movimento
 
@@ -317,6 +341,10 @@ La shadow mostra sempre il target richiesto geometricamente ammissibile e non in
 
 I click incrementali di movimento e rotazione mantengono la semantica precedente: validazione continua e arresto all'ultima posa valida. I drag hanno invece semantica endpoint-only e rollback totale. Lo sgancio editoriale verifica separatamente ogni posa finale candidata.
 
+`maximumValidPoseFraction` usa lo shape cast nativo solo per traslazioni a rotazione fissa (differenza angolare `< 1e-8`), su candidati AABB centrati a meta percorso con semiestensione `raggio + distanzaTraslazione / 2 + epsilon`. Per ogni ostacolo inizialmente separato, arresto al primo contatto sottraendo alla frazione TOI `2e-6 / travel`: anche verso il pavimento ci si ferma prima di toccarlo, senza avanzare fino alla penetrazione tollerata. I contatti gia presenti sono gestiti dagli intervalli: lo shape cast nativo non viene usato per risolvere questa condizione. Per includere anche la rotazione, il percorso viene suddiviso ricorsivamente da sinistra a destra, interpolando posizione e quaternion. Posto `travel = distanzaTraslazione + raggio * angolo`, per l'intervallo `[a,b]` il massimo moto di ogni punto rispetto alla posa centrale e limitato da `bound = travel * (b-a) / 2`. L'intervallo e accettato solo se non incerto e `min_i(distance_i + tolerance_i) >= bound + 2e-6`, con la soglia propria di ciascun contatto, come per gli endpoint. Non usare `min_i(distance_i)` seguito dall'aggiunta di un'unica tolleranza.
+
+Ogni chiamata ha budget `512` valutazioni di intervallo; a `bound <= 2e-6 m` o budget esaurito si conserva soltanto il prefisso accettato, segnalando `unresolved` quando la verifica resta irrisolta. Un esito `uncertain` arresta subito la verifica come irrisolta. Non si accetta un intervallo solo perche i suoi endpoint sono liberi. Il bound geometrico non elimina i limiti delle distanze Rapier descritti in §7.3. `wallScene` verifica anche l'endpoint prima di applicare il prefisso ammesso; un movimento parziale riproiettato sulla parete viene verificato nuovamente per percorso e posa. Nessuna di queste query viene eseguita durante pointermove del drag.
+
 La soglia click/drag e inizialmente `4 px`. Sotto soglia il rilascio produce il click incrementale; sopra soglia produce la sessione drag.
 
 ### 7.10 Degeneri
@@ -327,7 +355,7 @@ La soglia click/drag e inizialmente `4 px`. Sotto soglia il rilascio produce il 
 - proiezione tangenziale degenere: fallback deterministico su asse vista alternativo;
 - nessuna posa valida nello sgancio: hold ancora attached e feedback utente;
 - il retro non e classificato: un tentativo intenzionale sul retro e fuori ambito, ma la geometria resta collidente.
-- nessun candidato geometricamente ammissibile durante movimento drag: shadow ferma all'ultimo candidato;
+- nessun hit durante movimento drag: shadow nascosta ed endpoint non committabile, recuperabile al successivo hit;
 - endpoint drag invalido: nessun commit e risultato `invalid-endpoint`;
 - pointercancel, lost capture, blur, cambio selezione, rimozione o Escape: risultato `cancelled` e distruzione preview.
 
@@ -382,6 +410,8 @@ invalid-endpoint
 surface-limit
 ```
 
+`SceneActionResult.reason` distingue `wall-collision`, `hold-collision`, `no-surface`, `surface-gap`, `normal-limit`, `no-change` e `path-unresolved`, ed e assente quando non applicabile. Un arresto irrisolto o una posa selezionata come `uncertain` produce `path-unresolved`, non una collisione accertata. Come descritto in §7.3, una violazione confermata prevale sull'incertezza di un altro collider e viene restituita con `uncertain = false`, quindi conserva il feedback di collisione. Lo snapshot diagnostico read-only `window.__ROUTE_SETTER_SCENE__` espone `lastActionResult.reason` e `lastPoseDiagnostic` (posizione, quaternion, blocker, penetrazione e tolleranza in metri, handle collider, booleano `uncertain`), con campi coerenti con lo stesso contatto selezionato. Quest'ultimo descrive l'ultima `validatePose`, non necessariamente l'ultima azione o gli intervalli del percorso: puo essere nullo o precedente a un no-op. Nessun log persistente o invio di rete per frame; non e un sistema globale di gestione errori.
+
 ### 8.3 Pointer Events
 
 - usare esclusivamente Pointer Events per popup/gizmo;
@@ -419,6 +449,8 @@ La UX 9UX e desktop mouse. Touch targeting e gesture gizmo non sono implementati
 - disabilitare il comando `Genera immagine` durante una sessione drag attiva; non annullare automaticamente il drag per avviare l'export.
 
 ## 10. Error handling e logging
+
+Il completamento/revisione della gestione globale errori e gli interventi su backend/catalogo restano differiti rispetto al primo gruppo fisica/diagnostica (`DEC-025`). Le prescrizioni seguenti restano requisiti, non attestazioni di completamento del gruppo.
 
 - middleware backend centralizzato con ErrorId;
 - frontend intercetta categorie minime richieste e notifica backend quando possibile;

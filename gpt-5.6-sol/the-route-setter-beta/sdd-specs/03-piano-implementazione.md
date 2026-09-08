@@ -17,7 +17,21 @@
 
 Le fasi 0-9 e i relativi report sono congelati e descrivono la baseline storica gia completata. Non devono essere riscritti retroattivamente. Dalla fase 9UX in avanti prevalgono i requisiti e il design aggiornati per l'interazione contestuale. In particolare non sono piu normativi snap automatico per prossimita, avanti/indietro, shortcut globali, pannello comandi fisso e `Rimuovi presa` nella topbar.
 
+### Primo gruppo precedente (DEC-025)
+
+Perimetro richiesto: tolleranza fisica e diedri, continuita dei click, diagnostica locale e regressioni su fixture sintetiche e parete reale invariata. Backend/catalogo e gestione globale errori restano differiti. La verifica usa posa originale sull'intero TriMesh, epsilon numerico `2e-6 m` distinto dalla tolleranza geometrica, normalizzazione query-only convex/convex di fattore `100` e intervalli click con budget `512` e bound minimo `2e-6 m` (design §7.3, §7.9). La precedente soglia unica `1 mm` e sostituita soltanto per la parte tolleranza da `DEC-026`, sotto. Nessuna modifica degli asset o generazione hull frontend.
+
+Restano aperti sottostima della profondita presso giunzioni interne dei triangoli in Rapier `0.12.0` e contenimento completo in TriMesh chiusi: non dichiarare certificazione generale di geometrie degeneri o volumi solidi. Un eventuale upgrade richiede approvazione utente e verifica compatibilita secondo `DEC-025`. Esiti finali confermati: build frontend superata, 215/215 unitari in 11 file, 31/31 E2E con zero errori pageerror/console/HTTP nella traccia. Backend invariato, 33/33 riferito alla verifica precedente. Suite prestazionale headless SwiftShader FALLITA (3 FPS, long task massimo 829 ms, heartbeat 748 ms): nessuna evidenza hardware o certificazione prestazionale; misure Node separate in `docs/test-automatici.md`. Non dedurre la chiusura di tutti i requisiti da questi esiti.
+
 ---
+
+### Configurazione tolleranza corrente (DEC-026)
+
+Perimetro approvato: parete configurabile `1..10 mm` inclusi e decimali, default `5 mm`; hold immutabile `1 mm`, epsilon `2e-6 m` invariato. Il minimo per contatto `distance + tolerance` governa endpoint e intervalli, non il contatto grezzo piu profondo. Sweep da partenza separata sempre prima del primo contatto (anche pavimento); surface-lock `5 gradi`, gap `5 mm` e drag endpoint-only invariati.
+
+File runtime `source/frontend/public/physics-config.json`, chiave unica `wallPenetrationToleranceMm`, numero JSON iniziale `5` senza virgolette, punto decimale e nessun commento. Una fetch bootstrap `no-store`; errore gestito in pagina e avvio impedito se invalido/indisponibile, senza fallback o `pageerror` non gestiti. Questo non amplia il lavoro a backend/catalogo o gestione globale errori. Operativita, export prima dell'edit (possibile auto-reload Vite), perdita sessione e JPG non editabile, distinzione sorgente/deploy e cache in `docs/applicazione.md` e design §7.3.
+
+Verifiche finali: `config/physicsConfig.test.ts`, `physics/poseValidation.test.ts`, `physics/realWall.test.ts` e `e2e/physics-config.spec.ts`, associati ai requisiti esistenti. Unitari `331/331` in `12` file ed E2E `43/43` superati, verificati e comunicati dall'utente. Confermata la priorita di una violazione accertata sull'incertezza di un altro collider, con campi diagnostici coerenti. Verificata una build produzione in dist temporanea: file runtime reale `5 -> 3 -> 5` applicato al reload senza rebuild fra le modifiche. Baseline reale `9` pose per hold, griglia separata `52` per hold, scontri profondi e passi/twist documentati con provenienza in `docs/test-automatici.md`; nessuna garanzia su tutte le superfici o imperfezioni fotografiche. Report finale: `phases-outcome/Wall_tolerance_configuration_done.md`; backend invariato ed esiti storici preservati. Per questo aggiornamento solo documentale eseguire i gate documentazione e tracciabilita e `git diff --check`.
 
 ## Dipendenze tra fasi
 
@@ -473,8 +487,8 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - drag libero dalla mesh della hold disponibile solo in modalita `Sposta`;
 - target di aggancio reso come shadow 3D aderente alla parete;
 - verso del drag rotazione coerente col movimento del mouse;
-- confronto della normale corrente con la normale di aggancio, tolleranza 5 gradi;
-- blocco su cambio di superficie, diedro, spigolo o prominenza oltre soglia;
+- nei soli click, confronto della normale corrente con la normale di aggancio, tolleranza 5 gradi;
+- nei soli click, blocco su cambio di superficie, diedro, spigolo o prominenza oltre soglia; drag globale fra pannelli con validazione endpoint-only;
 - parete interamente collidente, retro non classificato;
 - nessuna shortcut globale di trasformazione;
 - overlay esclusi dall'export;
@@ -516,7 +530,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - sgancio a 0.50 m, fallback progressivo 0.10 m e fallimento a 10 m;
 - click rotazione a 1 grado e click movimento a 1 cm invariati;
 - shadow visibile durante drag mentre la hold reale resta immutata;
-- shadow movimento aderente alla parete e bloccata al surface limit;
+- shadow movimento aderente al primo punto visibile anche cambiando pannello; senza hit viene nascosta e l'endpoint non e committabile;
 - linea/freccia movimento e arco rotazione coerenti col target;
 - nessuna collision query durante pointermove;
 - release endpoint valido produce un solo commit;
@@ -531,7 +545,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - hold reale, collider, contact point, normale e twist immutati durante pointermove;
 - esattamente una fase applicativa di validazione endpoint al pointerup;
 - drag senza limite totale della distanza richiesta;
-- drag libero dalla hold attivo solo in `moving`, con offset pointer-contact point preservato;
+- drag libero dalla hold attivo solo in `moving`, con contact point sotto al puntatore senza offset iniziale preservato;
 - drag diretto sulla hold non cambia selezione e non muove la camera;
 - shadow targeting orientata coerentemente con una superficie frontale e una inclinata;
 - punto e normale di aggancio localmente coerenti entro 5 gradi anche su pannelli laterali e raccordi;
@@ -543,8 +557,8 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - preview aggiornata al massimo una volta per frame, con misurazione percentile 95;
 - nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove;
 - latenza endpoint tipica <= 50 ms, caso complesso <= 100 ms, nessun long task > 200 ms;
-- superficie curva entro 5 gradi seguita senza distacco;
-- cambio oltre 5 gradi bloccato senza transizione;
+- nei click, superficie curva entro 5 gradi seguita senza distacco;
+- nei click, cambio oltre 5 gradi bloccato senza transizione;
 - nessuna vecchia shortcut modifica la hold;
 - tasto destro/rotella disponibili in targeting, click sinistro riservato;
 - drag gizmo non muove la camera;
@@ -557,7 +571,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - tutte le azioni contestuali operative con risultati non ambigui;
 - parete impenetrabile nei flussi continui coperti;
 - aggancio diretto valido su tutta la geometria visibile targetizzabile;
-- nessuna transizione automatica fra inclinazioni oltre soglia;
+- nessuna transizione automatica fra inclinazioni oltre soglia nei click; drag globale consentito;
 - timer, pointer capture e modalita sempre rilasciati;
 - suite frontend e backend completa verde;
 - report `phases-outcome/Phase_9UX-bis_implementation_done.md` con evidenze e limiti, mantenendo il report 9UX precedente.
@@ -588,6 +602,9 @@ Chiudere copertura automatica completa e verifiche di regressione.
 ### Test da eseguire
 - esecuzione completa suite locale e CI;
 - regressione collisioni, targeting e aggancio diretto;
+- regressioni `physics/poseValidation.test.ts`: soglia/epsilon su diedri, winding e trasformazioni rigide, ostacoli sottili fra endpoint liberi, pavimento e pinna nello stesso TriMesh con contatto iniziale, arco di rotazione, esiti incerti, broadphase con 40 collider lontani senza narrowphase aggiuntiva, determinismo, query senza mutazioni o rete;
+- regressioni `physics/realWall.test.ts`: hash parete invariato, collider originali Hold1/Hold2, normali e pose laterali/frontali; questi casi non chiudono i limiti numerici di `DEC-025`;
+- E2E `selection-input.spec.ts`: feedback collisione/no-surface/no-change, rollback e cleanup; inclusi nei 31/31 confermati;
 - regressione ciclo detached/attached e modalita contestuali della FASE 9UX;
 - verifica che i comportamenti legacy congelati non siano piu raggiungibili.
 

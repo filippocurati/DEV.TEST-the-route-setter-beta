@@ -20,6 +20,8 @@ Dalla fase 9UX la UX normativa è:
 - nessun comando legacy avanti/indietro e nessuna shortcut globale di trasformazione;
 - `Escape` annulla la modalità, elimina la preview, deseleziona la presa e nasconde il popup.
 
+Il primo gruppo (`DEC-025`) riguarda tolleranza/diedri, continuita dei click, diagnostica locale e regressioni. `DEC-026`, approvata dall'utente, ne sostituisce soltanto la parte tolleranza con soglie separate e configurazione runtime della parete. Gli interventi su backend/catalogo e il completamento della gestione globale errori restano differiti; questa guida non ne attesta la chiusura.
+
 ## Architettura
 
 ```mermaid
@@ -126,7 +128,9 @@ Lo stato fisico è `detached` o `attached`; la modalità UI è `idle`, `attach-t
 
 ```mermaid
 flowchart TD
-  START[Avvio pagina] --> LOAD[Carica manifest e parete]
+  START[Avvio pagina] --> CONFIG{Configurazione fisica valida?}
+  CONFIG -->|Si| LOAD[Carica manifest e parete]
+  CONFIG -->|No| ERROR[Errore in pagina: avvio bloccato]
   LOAD --> READY[Catalogo e scena pronti]
   READY --> USE[Utilizza]
   USE --> SPAWN[Spawn detached libero]
@@ -160,7 +164,19 @@ La shadow gialla segue il ray centrale e orienta l'asse locale `+Z` sulla normal
 
 ### Movimento E Rotazione
 
-Il click sulle frecce muove di `1 cm` o ruota di `1°`. Oltre la soglia pointer di `4 px`, il gesto diventa una transazione: la presa reale e il collider restano invariati, la shadow mostra il candidato e il rilascio esegue una sola validazione endpoint. Il movimento da freccia è vincolato all'asse; quello iniziato sulla presa usa entrambe le dimensioni dello schermo. Il movimento segue la superficie entro `5°` e si arresta su gap o discontinuità.
+Il click sulle frecce richiede `1 cm` o `1°`, arrestando il passo alla frazione ammessa dalle query. Solo i click di movimento restano entro `5°` dalla normale di aggancio e si arrestano su gap o discontinuita. Oltre la soglia pointer di `4 px`, il gesto diventa una transazione: la presa reale e il collider restano invariati, la shadow mostra il candidato e il rilascio valida solo l'endpoint, senza query collisioni durante pointermove. Il drag da freccia e vincolato all'asse; quello iniziato sulla presa usa entrambe le dimensioni dello schermo, con contact point sotto al puntatore senza offset iniziale. Il drag usa la prima superficie visibile dell'intero modello, puo cambiare pannello senza limite di `5°` e trasporta l'orientamento sulla nuova normale. Un endpoint invalido annulla tutto; senza hit la shadow e nascosta e l'endpoint non e committabile, fino a un nuovo hit.
+
+### Validazione Fisica E Limiti
+
+`PhysicsWorld` misura la posa originale con `collider.contactShape` contro l'intero TriMesh e le altre prese, senza spostarla verso l'esterno lungo la normale del pannello. La broadphase AABB nativa seleziona i candidati con semiestensione `raggio + prediction`; i contatti negativi devono essere confermati da `intersectsShape`, mentre risposte contraddittorie oltre epsilon rendono la posa incerta e non committabile. Il contatto e valido; la tolleranza parete e configurabile in `1..10 mm`, decimali inclusi, default `5 mm`, mentre fra prese resta immutabile a `1 mm`. L'epsilon numerico separato resta `2e-6 m`. Per endpoint e intervalli governa il minimo per contatto di `distance + tolerance`, non la distanza grezza piu profonda con una soglia unica: ad esempio una parete a `-4 mm` entro i suoi `5 mm` non puo mascherare una presa a `-2 mm` oltre il suo `1 mm`. Le sole query fra coppie convesse supportate usano copie normalizzate di fattore `100`, con gli stessi vertici e indici degli hull precalcolati e distanze riconvertite in metri. Non vengono generati hull frontend: GLB, geometria renderizzata e collider del mondo restano invariati.
+
+Per i click, lo shape cast opera solo a rotazione fissa e da partenza separata, arrestando la traslazione prima del primo contatto, anche verso il pavimento: la tolleranza non autorizza lo sweep a proseguire fino alla profondita ammessa. Contatti iniziali e rotazione sono gestiti dalla suddivisione ricorsiva degli intervalli, confrontando il margine minimo `distance + tolerance` con il massimo moto dei punti del collider, dato da traslazione piu raggio per angolo di rotazione. Ogni chiamata usa budget `512` e bound minimo `2e-6 m`; gli intervalli incerti o irrisolti sono bloccati conservativamente, non accettati perche gli endpoint sono liberi. La regressione pavimento/pinna nello stesso collider con contatto iniziale passa, ma non elimina il limite nativo dei cast da contatto iniziale. Il drag resta editoriale endpoint-only e non usa questo controllo del percorso. Il surface-lock dei click resta a `5 gradi` e il gap massimo di riproiezione a `5 mm`, indipendenti dalla tolleranza parete.
+
+Limiti noti di Rapier `0.12.0`: la profondita per faccia vicino alle giunzioni interne dei triangoli puo essere sottostimata anche se l'intersezione e confermata; una presa completamente contenuta in un TriMesh chiuso senza intersezione superficiale non viene rilevata. Le regressioni e il bound del moto non sono una certificazione generale per geometrie arbitrarie degeneri o volumi solidi, e non attestano che tutti i difetti siano risolti. Il follow-up e aperto in `sdd-specs/05-open-decisions-guidate.md`, `DEC-025`; un eventuale upgrade Rapier richiede approvazione utente e verifiche dedicate.
+
+La tolleranza configurabile (`DEC-026`) non garantisce che ogni superficie sia agganciabile ne compensa necessariamente tutte le imperfezioni di modelli da foto/fotogrammetria. Una soglia maggiore ammette maggiore penetrazione parete, non corregge la mesh o la precisione delle query.
+
+Se una query rileva una violazione accertata e un altro collider restituisce dati incerti, prevale la violazione: la posa resta rifiutata per collisione, non per semplice incertezza. Blocker, handle, penetrazione, tolleranza e `uncertain: false` restano riferiti allo stesso contatto. Senza violazioni confermate, l'incertezza resta bloccante e produce `path-unresolved`.
 
 ### Export
 
@@ -267,6 +283,51 @@ Il frontend usa:
 - `E2E_FRONTEND_PORT` e `E2E_BACKEND_PORT` per la suite E2E;
 - `PERF_FRONTEND_PORT`, `PERF_BACKEND_PORT`, `PERF_HEADLESS`, `PERF_DURATION_MS` e `PERF_HOLD_COUNT` per il benchmark.
 
+### Tolleranza Parete Runtime
+
+Il file sorgente da modificare e `source/frontend/public/physics-config.json`. Contenuto iniziale:
+
+```json
+{
+  "wallPenetrationToleranceMm": 5
+}
+```
+
+Il valore e un numero JSON in millimetri da `1` a `10` inclusi. Sono ammessi decimali, ad esempio `7.5`, con punto e senza virgolette: non `"5"` o `7,5`. Nessun commento, virgola finale o chiave aggiuntiva. La tolleranza fra prese e sempre `1 mm` e non ha una chiave modificabile; l'epsilon resta `2e-6 m`.
+
+Il frontend richiede il file una sola volta al bootstrap con `cache: 'no-store'`, prima di creare la scena. Non lo importa nel bundle e non lo rilegge durante le interazioni. La configurazione resta fissa per quella sessione; solo una nuova apertura/reload applica il valore cambiato. File mancante, errore HTTP/rete, JSON malformato o valore invalido impediscono l'avvio senza ripiegare silenziosamente su `5 mm`: compare un errore gestito nella pagina, non un'eccezione `pageerror` non gestita. Correggere il file servito e ricaricare.
+
+**Prima di modificare il file, esportare l'eventuale vista da conservare con `Genera immagine`.** Il reload perde tutte le prese e lo stato della sessione. Il JPG salva soltanto un riferimento visivo: non e una sessione editabile e non permette di ripristinare la tracciatura. Vite puo ricaricare automaticamente la pagina non appena si modifica un file in `public`, quindi non attendere il reload manuale per esportare.
+
+In sviluppo, con `npm run dev` gia avviato:
+
+1. Esportare prima dell'edit se serve un riferimento della sessione corrente.
+2. Modificare il numero in `source/frontend/public/physics-config.json` e verificare il JSON.
+3. Ricaricare la pagina se Vite non l'ha gia ricaricata; controllare il valore attivo in console come indicato in Avvio Debug.
+
+Non occorrono riavvio del backend, riavvio del frontend, compilazione o nuova installazione delle dipendenze per questo cambio di valore: Vite serve direttamente `public`.
+
+In produzione, il codice che introduce questa funzionalita richiede prima la normale installazione delle dipendenze (`npm ci`), build (`npm run build`) e distribuzione iniziali. Dopo tale deploy:
+
+1. Individuare il `dist/physics-config.json` effettivamente distribuito e servito dal sito (alla base URL dell'applicazione).
+2. Dopo l'eventuale export, modificarne il numero e ricaricare la pagina. Con un server statico non servono rebuild o riavvio del server/backend.
+3. Riportare il valore permanente in `source/frontend/public/physics-config.json`: il build successivo copia `public` e sovrascrive il file in `dist`.
+
+Modificare soltanto `source/frontend/public/physics-config.json` non cambia un deploy esistente: occorre ricompilare/distribuire oppure copiare quel JSON nella posizione servita. Configurare server statico, reverse proxy e CDN/cache affinche rispettino `Cache-Control: no-store` per `physics-config.json`; il `no-store` della fetch browser non sostituisce la configurazione degli intermediari. In DevTools Network verificare che la risposta contenga il nuovo valore.
+
+Verifica finale confermata dall'utente: su una build di produzione in dist temporanea, il file reale servito e stato modificato `5 -> 3 -> 5` e ciascun valore e stato applicato al reload senza rebuild fra le modifiche. Non e soltanto una risposta simulata nei test. Risultati e limiti nel [report DEC-026](../phases-outcome/Wall_tolerance_configuration_done.md).
+
+### Prove Consigliate
+
+| Valore parete | Uso suggerito |
+|---|---|
+| `1 mm` | Baseline piu restrittiva, confrontabile con la precedente soglia unica. |
+| `3 mm` | Prova conservativa. |
+| `5 mm` | Default raccomandato sulla base delle pose reali verificate. |
+| `7.5 mm`, `10 mm` | Prove esplorative; non una garanzia di risoluzione su tutte le superfici. |
+
+Confrontare gli stessi punti, click `+/-1 cm` e twist `+/-1 grado`, annotando il valore attivo e il motivo del rifiuto. Ogni reload azzera la sessione: esportare prima di ciascun edit. I risultati reali verificati sono in `docs/test-automatici.md`; non modificare soglia hold, limite angolare o gap per queste prove.
+
 ## Avvio Live
 
 Prerequisiti: .NET SDK `8.0.424`, Node.js `22.18.0`, npm `10.9.3` e browser WebGL 2.0.
@@ -303,13 +364,26 @@ npm run dev -- --host 127.0.0.1
 
 Usare DevTools del browser per TypeScript/WebGL e il debugger .NET dell'IDE collegato al processo API. Lo snapshot `window.__ROUTE_SETTER_SCENE__` è diagnostico per gli E2E; la telemetria `window.__ROUTE_SETTER_PERFORMANCE__` esiste solo con query string `?performance=1`.
 
+Per diagnosticare un rifiuto, consultare in sola lettura lo snapshot corrente in DevTools, senza modificarlo:
+
+```javascript
+window.__ROUTE_SETTER_SCENE__?.collisionTolerancesMm
+window.__ROUTE_SETTER_SCENE__?.lastActionResult?.reason
+window.__ROUTE_SETTER_SCENE__?.lastPoseDiagnostic
+```
+
+Con il file iniziale, `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm` restituisce `{ wall: 5, holds: 1 }`. Sono valori attivi in millimetri da leggere, non da assegnare per cambiare la fisica. `lastPoseDiagnostic.toleranceMeters` e invece in metri e indica la soglia scelta per il contatto governante dal minimo `distance + tolerance`, non necessariamente il contatto con distanza grezza piu profonda; anche `penetrationMeters` va interpretato rispetto a quel contatto, non come massimo globale indipendente.
+
+`reason` distingue `wall-collision`, `hold-collision`, `no-surface`, `surface-gap`, `normal-limit`, `no-change` e `path-unresolved`; puo essere assente quando non applicabile. `path-unresolved` significa arresto conservativo, non collisione accertata. `lastPoseDiagnostic` contiene `position`, `rotation` (quaternion), `blocker`, `penetrationMeters`, `toleranceMeters`, `colliderHandle` e il booleano `uncertain` dell'ultima `validatePose`. Puo essere nullo o precedente all'azione corrente (ad esempio no-op o controllo del percorso senza query endpoint); non rappresenta una cronologia ne una misura certificata nei casi limite descritti sopra. Una violazione accertata prevale su risposte contraddittorie di altri collider: tutti i campi restano associati al contatto della violazione e `uncertain = false`. Senza violazioni accertate, viene selezionato un contatto incerto con campi coerenti e `uncertain = true`, senza sentinelle infinite in `penetrationMeters`: la UI restituisce `path-unresolved` anche in presenza di un blocker. Sono dati volatili in memoria, senza log persistenti, invii di rete o logging per frame.
+
 ## Errori E Logging
 
-Il middleware assegna un identificatore di correlazione alla richiesta e converte le eccezioni nel contratto HTTP previsto. Serilog scrive JSON in modo asincrono, con livello minimo configurabile e retention giornaliera. Il frontend mostra messaggi non tecnici e invia al backend solo eventi diagnostici essenziali; non conserva log persistenti nel browser.
+Il middleware assegna un identificatore di correlazione alla richiesta e converte le eccezioni nel contratto HTTP previsto. Serilog scrive JSON in modo asincrono, con livello minimo configurabile e retention giornaliera. Il frontend mostra messaggi non tecnici e non conserva log persistenti nel browser. La copertura globale di tutte le categorie di errore e il relativo inoltro al backend restano da completare/verificare nel gruppo differito: `lastActionResult.reason` e `lastPoseDiagnostic` sono diagnostica locale, non sostituiscono tale gestione ne producono invii per frame.
 
 ## Risoluzione Problemi
 
 - `Parete non disponibile`: verificare `AssetStorage.RootPath`, la cartella `main-wall` e `GET /api/wall`.
+- Configurazione fisica non valida/non disponibile: controllare la risposta di `physics-config.json`, numero `1..10` senza virgolette, punto decimale, nessun commento o altra chiave. Correggere il file effettivamente servito, controllare cache/proxy e ricaricare; nessun fallback automatico. Questo caso non richiede una correzione generale del backend.
 - Presa senza pulsante `Utilizza`: verificare `colliderStatus` nel manifest e la presenza di `collider.json`.
 - Errori proxy frontend: verificare che il backend ascolti sulla porta `5080` o impostare `E2E_BACKEND_PORT` coerentemente.
 - WebGL non disponibile: aggiornare driver/browser e verificare l'accelerazione hardware.

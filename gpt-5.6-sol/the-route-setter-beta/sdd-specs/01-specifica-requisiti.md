@@ -124,6 +124,7 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - Il CCD e l'assenza di tunneling si applicano alle trasformazioni reali incrementali e alle pose committate.
 - Il percorso visuale della shadow e il teletrasporto editoriale endpoint-only dei drag non sono una simulazione fisica e sono esclusi dal requisito di tunneling.
 - Criteri: nessun tunneling nei click incrementali e nei movimenti cinematici reali; un endpoint drag libero oltre un ostacolo intermedio e accettato se la posa finale e valida.
+- Verifica corrente dei click: shape cast solo a rotazione fissa e da partenza separata fino al primo contatto; contatti iniziali e rotazione sono gestiti da intervalli ricorsivi con clearance rispetto al massimo moto dei punti. Intervalli irrisolti bloccati conservativamente. Le regressioni non certificano geometrie arbitrarie: limiti in `REQ-FIS-011` e `DEC-025`.
 
 **REQ-FIS-004 - KinematicCharacterController.**
 - Criteri: movimento move-and-slide con blocco componenti in collisione e mantenimento componenti libere.
@@ -167,10 +168,16 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 **REQ-FIS-011 - No compenetrazione.**
 - Tutto il TriMesh, incluso il retro non classificato, e impenetrabile durante spostamento, rotazione e sgancio.
 - Aggancio e sgancio diretto validano la posa finale candidata ma non simulano il percorso editoriale verso la destinazione.
-- Il contatto a distanza zero e valido; la tolleranza numerica massima di penetrazione accettata e `0.001 m`.
+- Il contatto a distanza zero e valido; la tolleranza geometrica verso la parete e configurabile in `1..10 mm` inclusi, con decimali e default `5 mm`; fra prese resta immutabile a `1 mm`. L'epsilon numerico separato resta `2e-6 m` (`DEC-026`, che supera soltanto la parte tolleranza di `DEC-025`).
+- `PhysicsWorld` usa il minimo per contatto di `distance + tolerance`, non la distanza grezza piu profonda con una soglia unica. Questo margine governa sia gli endpoint sia gli intervalli dei click; uno scontro fra prese non puo essere mascherato da una maggiore penetrazione parete entro la propria soglia.
+- La validazione interroga la posa originale contro l'intero TriMesh e le altre hold, senza offset uscente dipendente dal pannello; un contatto negativo deve essere corroborato dall'intersezione nativa. Una violazione accertata prevale sull'incertezza di un altro collider, con blocker, handle, penetrazione, tolleranza e `uncertain: false` coerenti con il contatto governante. In assenza di violazioni accertate, risposte contraddittorie oltre epsilon rendono la posa incerta (`lastPoseDiagnostic.uncertain`), rifiutata con feedback `path-unresolved` anziche collisione accertata. Il criterio vale anche per gli intervalli ed e indipendente dall'ordine broadphase.
 - I click incrementali di spostamento e rotazione continuano ad arrestarsi all'ultima posa valida.
 - I drag di spostamento e rotazione validano esclusivamente l'endpoint al rilascio; il percorso puo attraversare ostacoli per scelta editoriale esplicita.
-- Criteri: ogni posa committata rispetta la tolleranza di `0.001 m`; endpoint drag invalido annulla integralmente il drag; nessun commit parziale.
+- Criteri: ogni posa committata deve rispettare la soglia del singolo contatto con il solo epsilon numerico dichiarato; endpoint drag invalido annulla integralmente il drag; nessun commit parziale. Gli sweep da partenza separata continuano a fermarsi prima del primo contatto, anche con il pavimento, senza avanzare fino alla profondita tollerata.
+- Configurazione: `source/frontend/public/physics-config.json` contiene soltanto `{"wallPenetrationToleranceMm":5}` come valore iniziale. Numero JSON finito, senza virgolette, decimali con punto, nessun commento; chiavi sconosciute, valori fuori intervallo o non numerici sono invalidi. Non esiste una chiave configurabile per la tolleranza fra prese.
+- Bootstrap: una sola fetch con `cache: 'no-store'`, prima di creare la scena; nessuna rilettura durante le interazioni. File invalido, HTTP non riuscito, parsing o rete falliti impediscono l'avvio senza fallback silenzioso; messaggio gestito nella pagina, niente eccezioni `pageerror` non gestite. Questo handling e limitato alla configurazione, non chiude la gestione globale errori.
+- Operativita: modifica del file servito e reload applicano il valore alla nuova sessione. In sviluppo nessun riavvio backend/frontend o compilazione; Vite puo ricaricare automaticamente dopo una modifica a `public`. Esportare prima di modificare: reload perde la sessione e JPG non salva lo stato editabile. In produzione installazione/build iniziale della funzionalita necessari; poi modifica del `dist/physics-config.json` distribuito e reload senza rebuild/riavvio su server statico. Modifiche al solo sorgente richiedono rebuild/copia nel deploy; conservare il valore permanente in `public`, perche il build sovrascrive `dist`. Server/proxy/cache devono rispettare `no-store`.
+- Limiti aperti dell'implementazione Rapier `0.12.0`: profondita per faccia potenzialmente sottostimata vicino alle giunzioni interne dei triangoli; contenimento completo dentro un TriMesh chiuso non rilevato senza intersezione superficiale. Il requisito non e integralmente certificato per geometrie arbitrarie degeneri o volumi solidi; follow-up in `DEC-025`.
 
 **REQ-FIS-012 - Separazione mesh/collider.**
 - Criteri: fisica usa solo collider Rapier.
@@ -188,6 +195,7 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - Durante i click da `1 cm` la hold puo seguire piccole variazioni locali pur restando aderente, ma la normale candidata deve rimanere entro `5 gradi` dalla normale di aggancio.
 - Un diedro, spigolo, prominenza, gap o cambio di inclinazione oltre soglia arresta il click all'ultima posa valida.
 - Il drag transazionale e escluso dal surface-lock iniziale e puo scegliere qualsiasi superficie visibile del modello.
+- Il gap massimo di riproiezione resta `5 mm` e il limite angolare resta `5 gradi`: entrambi sono indipendenti da `wallPenetrationToleranceMm`.
 
 ## HUL - Convex Hull backend
 
@@ -292,7 +300,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Quattro frecce DOM/SVG compatte e semitrasparenti ai bordi della hold proiettata.
 - Click senza drag = `1 cm`; piu click singoli restano disponibili. La pressione prolungata non avvia piu ripetizione automatica: superata la soglia drag, inizia la preview transazionale.
 - Drag dalla freccia = shadow 3D aderente alla parete piu linea/freccia gialla retta verso il target richiesto; movimento vincolato all'asse della freccia.
-- In modalita `moving`, il drag puo iniziare anche direttamente sulla mesh della hold selezionata; in questo caso il delta e libero in entrambe le dimensioni screen-space e mantiene l'offset iniziale pointer-contact point.
+- In modalita `moving`, il drag puo iniziare anche direttamente sulla mesh della hold selezionata; in questo caso il contact point segue il puntatore in entrambe le dimensioni screen-space, senza conservare l'offset iniziale pointer-contact point.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
 - Durante pointermove e consentito un raycast globale sul primo punto visibile, ma nessuna validazione Convex Hull o collision query.
 - Durante il drag libero il contact point coincide con il puntatore. La shadow usa il primo punto visibile dell'intero modello, puo passare fra pannelli e adegua posizione e orientamento alla nuova normale trasportando il twist con la rotazione minima; non viene validato il percorso intermedio.
@@ -312,6 +320,8 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UX-010 - Risultati e feedback.**
 - Le azioni scena restituiscono esiti distinguibili: `applied`, `blocked`, `invalid-target`, `not-available`, `previewing`, `committed`, `cancelled`, `invalid-endpoint`, `surface-limit`, con motivo non tecnico.
+- La diagnostica locale espone un `reason` opzionale: `wall-collision`, `hold-collision`, `no-surface`, `surface-gap`, `normal-limit`, `no-change`, `path-unresolved`. Un percorso irrisolto non va presentato come collisione accertata; lo snapshot dell'ultima query posa e consultabile senza log persistenti o rete per frame. Non sostituisce la gestione globale errori, differita dal primo gruppo (`DEC-025`).
+- Lo snapshot read-only `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm` espone i valori attivi, normalmente `{ wall: 5, holds: 1 }`. `lastPoseDiagnostic.toleranceMeters` indica la soglia del contatto governante selezionato dal minimo `distance + tolerance`, non necessariamente quello con distanza grezza piu profonda; non e un controllo per modificare la configurazione.
 - Criteri: nessun messaggio `comando applicato` quando la trasformazione non avviene; errore locale non chiude il popup o la modalita salvo necessita.
 
 ## IMG - Generazione immagine

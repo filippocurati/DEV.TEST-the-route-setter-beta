@@ -5,6 +5,7 @@ import { SessionCatalog } from './catalog/sessionCatalog';
 import { HoldOverlay } from './interaction/holdOverlay';
 import { createWallScene } from './scene/wallScene';
 import { downloadGuideImage } from './export/guideImage';
+import { loadPhysicsConfig } from './config/physicsConfig';
 
 /** Avvia scena, catalogo e ciclo di vita delle prese per la sessione corrente. */
 async function bootstrap(): Promise<void> {
@@ -63,8 +64,9 @@ async function bootstrap(): Promise<void> {
   const catalog = new SessionCatalog();
 
   try {
+    const physicsConfig = await loadPhysicsConfig();
     const [scene] = await Promise.all([
-      createWallScene(viewport, status),
+      createWallScene(viewport, status, physicsConfig),
       catalog.loadManifest(),
     ]);
 
@@ -204,7 +206,6 @@ async function bootstrap(): Promise<void> {
     status.textContent = 'Impossibile inizializzare l’applicazione.';
     status.dataset.state = 'error';
     feedback.textContent = error instanceof Error ? error.message : 'Errore durante l’inizializzazione.';
-    throw error;
   }
 }
 

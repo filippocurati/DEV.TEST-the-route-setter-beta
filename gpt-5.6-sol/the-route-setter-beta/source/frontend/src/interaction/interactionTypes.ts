@@ -29,6 +29,9 @@ export interface ScreenRect {
 export interface SceneActionResult {
   readonly status: SceneActionStatus;
   readonly message: string;
+  /** Causa diagnostica dell'esito, assente quando non applicabile. */
+  readonly reason?: 'wall-collision' | 'hold-collision' | 'no-surface' | 'surface-gap'
+    | 'normal-limit' | 'no-change' | 'path-unresolved';
 }
 
 export interface TargetPreview {
