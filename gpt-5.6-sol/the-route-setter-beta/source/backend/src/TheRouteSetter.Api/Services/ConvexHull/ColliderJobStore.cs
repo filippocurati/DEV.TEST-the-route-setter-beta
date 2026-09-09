@@ -9,14 +9,20 @@ public sealed class ColliderJobStore : IColliderJobStore
 {
     private readonly ConcurrentQueue<ColliderJob> jobs = new();
     private readonly ConcurrentDictionary<string, ColliderProcessingStatus> statuses = new(StringComparer.Ordinal);
+    private bool initialDiscoveryCompleted;
 
     /// <inheritdoc />
     public ColliderProcessingStatus GetStatus(string holdId, bool colliderFileExists)
     {
+        var discoveryCompleted = Volatile.Read(ref initialDiscoveryCompleted);
         return statuses.TryGetValue(holdId, out var status)
             ? status
+            : discoveryCompleted ? ColliderProcessingStatus.Failed
             : colliderFileExists ? ColliderProcessingStatus.Ready : ColliderProcessingStatus.Missing;
     }
+
+    /// <inheritdoc />
+    public void CompleteInitialDiscovery() => Volatile.Write(ref initialDiscoveryCompleted, true);
 
     /// <inheritdoc />
     public void SetStatus(string holdId, ColliderProcessingStatus status)

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using TheRouteSetter.Api.Models;
 using TheRouteSetter.Api.Services.Assets;
+using TheRouteSetter.Api.Services.ConvexHull;
 
 namespace TheRouteSetter.Api.Controllers;
 
@@ -29,11 +30,19 @@ public sealed class HoldsController : ControllerBase
     [ProducesResponseType<IReadOnlyList<HoldManifest>>(StatusCodes.Status200OK)]
     public ActionResult<IReadOnlyList<HoldManifest>> GetAll() => Ok(assets.GetHolds());
 
+    /// <summary>Restituisce solo readiness corrente, senza metadati o letture GLB.</summary>
+    [HttpGet("status")]
+    [ProducesResponseType<IReadOnlyList<HoldStatus>>(StatusCodes.Status200OK)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public ActionResult<IReadOnlyList<HoldStatus>> GetStatus() => Ok(assets.GetHoldStatuses());
+
     /// <summary>
     /// Scarica su richiesta il modello GLB della presa indicata.
     /// </summary>
     [HttpGet("{id}/model")]
     [Produces("model/gltf-binary")]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status416RangeNotSatisfiable)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetModel(string id) => ToFileResult(assets.GetHoldModel(id));
@@ -42,6 +51,8 @@ public sealed class HoldsController : ControllerBase
     /// Scarica l'immagine di anteprima della presa indicata.
     /// </summary>
     [HttpGet("{id}/preview")]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status416RangeNotSatisfiable)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetPreview(string id) => ToFileResult(assets.GetHoldPreview(id));
@@ -51,7 +62,9 @@ public sealed class HoldsController : ControllerBase
     /// </summary>
     [HttpGet("{id}/collider")]
     [Produces("application/json")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status416RangeNotSatisfiable)]
+    [ProducesResponseType<ColliderDocument>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetCollider(string id) => ToFileResult(assets.GetHoldCollider(id));
 
@@ -59,6 +72,8 @@ public sealed class HoldsController : ControllerBase
     /// Scarica un asset opzionale scoperto nella cartella della presa.
     /// </summary>
     [HttpGet("{id}/assets/{fileName}")]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status416RangeNotSatisfiable)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetOptionalAsset(string id, string fileName) =>

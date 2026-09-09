@@ -27,23 +27,28 @@ public sealed class LogsController : ControllerBase
     /// <response code="202">Evento accettato dal backend.</response>
     /// <response code="400">Payload non valido.</response>
     [HttpPost]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<FrontendLogResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status415UnsupportedMediaType)]
     public IActionResult Post([FromBody] FrontendLogRequest request)
     {
-        if (request.Level == LogLevel.None)
+        if (request.Level is null || !Enum.IsDefined(request.Level.Value) || request.Level == LogLevel.None)
         {
             ModelState.AddModelError(nameof(request.Level), "Il livello None non e accettato.");
             return ValidationProblem(ModelState);
         }
 
-        if (request.Context is { Count: > 20 })
+        if (request.Context is { Count: > 20 }
+            || request.Context?.Any(item => item.Key.Length > 80 || item.Value is null || item.Value.Length > 500) == true
+            || request.RequestId is { Length: 0 }
+            || (request.ErrorId is not null && !Guid.TryParse(request.ErrorId, out _)))
         {
             ModelState.AddModelError(nameof(request.Context), "Sono consentite al massimo 20 proprieta di contesto.");
             return ValidationProblem(ModelState);
         }
 
-        logs.Write(request, HttpContext.TraceIdentifier);
-        return Accepted();
+        return Accepted(logs.Write(request, HttpContext.TraceIdentifier));
     }
 }

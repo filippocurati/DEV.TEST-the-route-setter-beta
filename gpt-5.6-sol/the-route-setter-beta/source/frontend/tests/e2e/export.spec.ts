@@ -27,7 +27,7 @@ test('genera un JPG ad alta risoluzione e ripristina scena e UI', async ({ page 
   expect(stream).not.toBeNull();
   const values: number[] = [];
   for await (const chunk of stream! as AsyncIterable<Uint8Array>) {
-    values.push(...chunk);
+    for (const byte of chunk) values.push(byte);
   }
   const bytes = new Uint8Array(values);
   const dimensions = readJpegDimensions(bytes);
@@ -63,7 +63,7 @@ test('genera un JPG ad alta risoluzione e ripristina scena e UI', async ({ page 
   expect(after?.lastExportCamera?.zoom).toBe(before?.cameraZoom);
   expect(after?.lastExportCamera?.near).toBe(before?.cameraNear);
   expect(after?.lastExportCamera?.far).toBe(before?.cameraFar);
-  expect(after?.lastExportCamera?.aspect).toBeCloseTo(dimensions.width / dimensions.height, 6);
+  expect(after?.lastExportCamera?.aspect).toBe(before?.cameraAspect);
 });
 
 /** Legge il primo marker SOF JPEG e ne restituisce le dimensioni codificate. */

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TheRouteSetter.Api.Models;
 using Xunit;
+using TheRouteSetter.Api.Tests.Support;
 
 namespace TheRouteSetter.Api.Tests;
 
@@ -49,6 +50,22 @@ public sealed class ErrorApiIntegrationTests : IDisposable
         Assert.DoesNotContain("InvalidOperationException", body);
     }
 
+    [Theory]
+    [InlineData(400)]
+    [InlineData(413)]
+    [InlineData(415)]
+    [InlineData(429)]
+    public async Task BadHttpRequestException_PreservesStatusAndSafeContract(int status)
+    {
+        var response = await client.GetAsync($"/test-error/status/{status}");
+        var body = await response.Content.ReadAsStringAsync();
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.True(Guid.TryParse(error!.ErrorId, out _));
+        Assert.Equal(response.Headers.GetValues("X-Request-Id").Single(), error.RequestId);
+        Assert.DoesNotContain("technical-private", body);
+    }
+
     /// <summary>
     /// Rilascia host e directory temporanea.
     /// </summary>
@@ -72,14 +89,14 @@ public sealed class ErrorApiIntegrationTests : IDisposable
     /// <summary>
     /// Inserisce un ramo terminale di test dopo i middleware registrati dall'applicazione.
     /// </summary>
-    private sealed class ErrorApiFactory : WebApplicationFactory<Program>
+    private sealed class ErrorApiFactory : IsolatedApiFactory
     {
         private readonly string rootPath;
 
         /// <summary>
         /// Inizializza la factory con la directory log temporanea.
         /// </summary>
-        public ErrorApiFactory(string rootPath)
+        public ErrorApiFactory(string rootPath) : base(rootPath)
         {
             this.rootPath = rootPath;
         }
@@ -89,6 +106,7 @@ public sealed class ErrorApiIntegrationTests : IDisposable
         /// </summary>
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -114,4 +132,7 @@ public sealed class TestErrorController : ControllerBase
     /// </summary>
     [HttpGet]
     public IActionResult Get() => throw new InvalidOperationException("server-secret C:\\internal\\implementation.cs");
+
+    [HttpGet("status/{status:int}")]
+    public IActionResult GetStatus(int status) => throw new Microsoft.AspNetCore.Http.BadHttpRequestException("technical-private", status);
 }

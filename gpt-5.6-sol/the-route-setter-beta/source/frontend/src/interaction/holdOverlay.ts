@@ -1,4 +1,3 @@
-import { quantizeRotationDelta } from './targetSampling';
 import type {
   InteractionSnapshot,
   MoveDirection,
@@ -6,24 +5,43 @@ import type {
   SceneActionResult,
 } from './interactionTypes';
 
+/** Comandi delegati alla scena: l'overlay gestisce i gesti, non lo stato fisico. */
 export interface HoldOverlayActions {
+  /** Apre il dettaglio del modello selezionato. */
   details(): void;
+  /** Attiva il bersaglio per scegliere un punto di aggancio. */
   attach(): SceneActionResult;
+  /** Cerca una posa libera davanti alla parete per la presa agganciata. */
   detach(): SceneActionResult;
+  /** Abilita i controlli di traslazione della presa agganciata. */
   moveMode(): SceneActionResult;
+  /** Richiede un passo di traslazione tangente alla superficie. */
   move(direction: MoveDirection): SceneActionResult;
+  /** Abilita i controlli di rotazione attorno alla normale locale. */
   rotateMode(): SceneActionResult;
+  /** Richiede passi angolari nel verso indicato, soggetti ai limiti fisici. */
   rotate(direction: RotationDirection, steps?: number): SceneActionResult;
+  /** Avvia un'anteprima di movimento associata al puntatore e all'eventuale asse. */
   beginMoveDrag(direction: MoveDirection | 'free', point: { x: number; y: number }, pointerId: number): SceneActionResult;
+  /** Aggiorna il candidato visivo senza spostare il corpo fisico. */
   updateMoveDrag(point: { x: number; y: number }, pointerId: number): void;
+  /** Valida il candidato al rilascio del puntatore e conclude il movimento. */
   commitMoveDrag(pointerId: number): SceneActionResult;
+  /** Avvia l'anteprima angolare mantenendo la posa fisica iniziale. */
   beginRotationDrag(point: { x: number; y: number }, pointerId: number): SceneActionResult;
+  /** Aggiorna l'angolo candidato dal movimento del puntatore. */
   updateRotationDrag(point: { x: number; y: number }, pointerId: number): void;
+  /** Valida l'orientamento candidato e conclude il gesto di rotazione. */
   commitRotationDrag(pointerId: number): SceneActionResult;
+  /** Scarta l'anteprima senza applicare la trasformazione candidata. */
   cancelTransformDrag(): void;
+  /** Rimuove la selezione dalla scena e la restituisce al catalogo. */
   remove(): void;
+  /** Termina la modalita di interazione corrente. */
   cancel(): void;
+  /** Sospende o ripristina i controlli camera durante i gesti dell'overlay. */
   setOrbitEnabled(enabled: boolean): void;
+  /** Mostra l'esito dell'azione nel feedback applicativo. */
   feedback(result: SceneActionResult): void;
 }
 
@@ -56,7 +74,6 @@ export class HoldOverlay {
   private pendingMovePoint: { x: number; y: number } | null = null;
   private rotationFrame: number | null = null;
   private pendingRotationPoint: { x: number; y: number } | null = null;
-  private contactScreenPoint: { x: number; y: number } | null = null;
 
   /** Crea l'overlay, collega i controlli DOM e registra una sola volta i listener pointer. */
   constructor(private readonly container: HTMLElement, private readonly actions: HoldOverlayActions) {
@@ -100,7 +117,6 @@ export class HoldOverlay {
   /** Sincronizza visibilita, posizione e stato dei controlli con lo snapshot corrente della scena. */
   update(snapshot: InteractionSnapshot): void {
     const selected = snapshot.selected;
-    this.contactScreenPoint = selected?.contactScreenPoint ?? null;
     const showMenu = Boolean(selected?.screenBounds.visible) && snapshot.mode !== 'attach-targeting' && !snapshot.exporting;
     this.menu.hidden = !showMenu;
     this.root.hidden = snapshot.exporting;
@@ -165,6 +181,7 @@ export class HoldOverlay {
         this.updateMovePointer(event);
       });
       handle.addEventListener('pointerup', (event) => {
+        if (this.movePointer?.id !== event.pointerId) return;
         if (this.movePointer?.dragging) this.actions.updateMoveDrag(this.viewportPoint(event), event.pointerId);
         this.finishMove(true);
       });
@@ -214,7 +231,7 @@ export class HoldOverlay {
         }
       });
       handle.addEventListener('pointerup', (event) => {
-        if (!this.rotationPointer) return;
+        if (this.rotationPointer?.id !== event.pointerId) return;
         if (this.rotationPointer.dragged) {
           this.actions.updateRotationDrag(this.viewportPoint(event), event.pointerId);
           this.report(this.actions.commitRotationDrag(this.rotationPointer.id));
@@ -253,24 +270,17 @@ export class HoldOverlay {
     }
   }
 
-  /** Ancora gli handle al contact point proiettato, con fallback al centro del bounding box. */
+  /** Dispone le frecce fuori dal bounding box e centra la rotazione sul contatto. */
   private positionHandles(snapshot: InteractionSnapshot): void {
     const bounds = snapshot.selected!.screenBounds;
     const centerX = snapshot.selected!.contactScreenPoint?.x ?? (bounds.left + bounds.right) / 2;
     const centerY = snapshot.selected!.contactScreenPoint?.y ?? (bounds.top + bounds.bottom) / 2;
-    this.moveHandles.style.left = `${centerX}px`;
-    this.moveHandles.style.top = `${centerY}px`;
+    this.moveHandles.style.left = `${(bounds.left + bounds.right) / 2}px`;
+    this.moveHandles.style.top = `${(bounds.top + bounds.bottom) / 2}px`;
+    this.moveHandles.style.setProperty('--hold-half-width', `${(bounds.right - bounds.left) / 2}px`);
+    this.moveHandles.style.setProperty('--hold-half-height', `${(bounds.bottom - bounds.top) / 2}px`);
     this.rotationHandles.style.left = `${centerX}px`;
     this.rotationHandles.style.top = `${centerY}px`;
-  }
-
-  /** Restituisce il centro di rotazione in coordinate client per calcolare il delta angolare. */
-  private rotationCenter(): { x: number; y: number } {
-    const bounds = this.container.getBoundingClientRect();
-    return {
-      x: bounds.left + (this.contactScreenPoint?.x ?? Number.parseFloat(this.rotationHandles.style.left)),
-      y: bounds.top + (this.contactScreenPoint?.y ?? Number.parseFloat(this.rotationHandles.style.top)),
-    };
   }
 
   /** Conclude il gesto lineare, applicando il click/commit richiesto oppure annullando la preview. */
@@ -292,17 +302,13 @@ export class HoldOverlay {
 
   /** Rilascia pointer capture e frame pendenti della rotazione, con rollback quando richiesto. */
   private finishRotation(cancel = true): void {
-    if (this.rotationPointer) {
-      const wasDragging = this.rotationPointer.dragged;
-      if (this.rotationPointer.element.hasPointerCapture(this.rotationPointer.id)) {
-        this.rotationPointer.element.releasePointerCapture(this.rotationPointer.id);
-      }
-      if (cancel && wasDragging) this.actions.cancelTransformDrag();
-    }
+    const pointer = this.rotationPointer;
     this.rotationPointer = null;
     if (this.rotationFrame !== null) cancelAnimationFrame(this.rotationFrame);
     this.rotationFrame = null;
     this.pendingRotationPoint = null;
+    if (pointer?.element.hasPointerCapture(pointer.id)) pointer.element.releasePointerCapture(pointer.id);
+    if (cancel && pointer?.dragged) this.actions.cancelTransformDrag();
   }
 
   /** Disegna l'indicatore DOM dalla presa al punto richiesto senza partecipare al picking 3D. */

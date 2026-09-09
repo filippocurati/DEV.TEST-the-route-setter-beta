@@ -17,6 +17,9 @@ public interface IAssetCatalogService
     /// </summary>
     IReadOnlyList<HoldManifest> GetHolds();
 
+    /// <summary>Restituisce esclusivamente la readiness corrente dei collider.</summary>
+    IReadOnlyList<HoldStatus> GetHoldStatuses();
+
     /// <summary>
     /// Restituisce i modelli validi da verificare o elaborare in background.
     /// </summary>

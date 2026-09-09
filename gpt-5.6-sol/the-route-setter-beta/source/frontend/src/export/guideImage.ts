@@ -67,8 +67,6 @@ export async function generateGuideImage(
 ): Promise<GuideImageResult> {
   const dimensions = calculateExportDimensions(viewportWidth, viewportHeight);
   const exportCamera = interactiveCamera.clone();
-  exportCamera.aspect = dimensions.width / dimensions.height;
-  exportCamera.updateProjectionMatrix();
   exportCamera.updateMatrixWorld(true);
   const renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
 
@@ -84,9 +82,12 @@ export async function generateGuideImage(
     const blob = await canvasToJpeg(renderer.domElement);
     return { ...dimensions, blob, camera: snapshotCamera(exportCamera) };
   } finally {
-    renderer.dispose();
-    renderer.forceContextLoss();
-    renderer.domElement.remove();
+    try {
+      renderer.dispose();
+    } finally {
+      try { renderer.forceContextLoss(); }
+      finally { renderer.domElement.remove(); }
+    }
   }
 }
 

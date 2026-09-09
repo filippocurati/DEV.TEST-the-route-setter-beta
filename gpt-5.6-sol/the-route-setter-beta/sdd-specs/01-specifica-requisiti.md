@@ -5,9 +5,15 @@ Ogni requisito usa ID `REQ-<DOMINIO>-<NUMERO>` e include criteri di accettazione
 
 Domini: ARC, MOD, CAT, SCN, FIS, HUL, UI, UX, IMG, PRF, ERR, LOG, TST, DOC, DEP.
 
-## Baseline e prevalenza 9UX
+## Baseline v0.0.1 e prevalenza
 
 Le fasi 0-9 e i relativi report restano congelati come baseline storica. Dalla fase 9UX in avanti i requisiti aggiornati in questo documento sostituiscono le precedenti regole di interazione basate su snap automatico, comandi avanti/indietro, pannello comandi fisso e shortcut globali. Non e richiesto retrofittare i report delle fasi congelate.
+
+### Requisiti e accettazione di versione
+
+I criteri restano normativi entro costituzione e decisioni esplicite; design, codice e report non li riducono implicitamente. La matrice `04` collega requisiti e test ma non certifica da sola il loro soddisfacimento. Restano tutti i `101` requisiti attivi e l'ID storico `REQ-TST-008`.
+
+Lo sviluppo di **v0.0.1 e CHIUSO e ACCETTATO dall'utente con limiti noti** (`DEC-029`). `REQ-ARC-007` e aggiornato al supporto ufficiale solo Chrome; `DEC-028` mantiene prefisso dei click senza sliding e indici hull obbligatori. Le limitazioni accettate sono eccezioni di release, non eliminazioni di funzionalita, test implicitamente superati o correzioni dei limiti. [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md) e l'unica fonte di stato, rischi, eccezioni ed esiti con provenienza; le attenzioni residue non bloccano questa chiusura.
 
 ## ARC - Architettura
 
@@ -32,7 +38,7 @@ OpenAPI/Swagger + separazione Controller/Service.
 - Criteri: nessun login/token/ruoli richiesti per l'uso.
 
 **REQ-ARC-007 - Compatibilita browser.**
-- Criteri: funzionamento su Chrome/Edge/Firefox stabili con WebGL 2.0.
+- Criteri: per v0.0.1 funzionamento ufficialmente supportato su Chrome Stable desktop con WebGL 2.0, senza installazioni aggiuntive. Ultima versione testata: Chrome 152; nessuna garanzia automatica per ogni futura Stable del vendor. Edge e Firefox sono esplorativi, non target ufficiali ne blocchi di release. Revisione normativa approvata dall'utente in `DEC-029`, coerente con `C12` e `app_definition.md`.
 
 **REQ-ARC-008 - No REST ad alta frequenza.**
 - Criteri: durante movimento continuo non ci sono chiamate per frame/mouse move.
@@ -71,6 +77,8 @@ GLB obbligatorio; texture/asset opzionali.
 
 **REQ-CAT-003 - Cache catalogo.**
 - Criteri: manifest e preview richiesti una volta per sessione.
+- La cache riguarda i metadati statici immutabili e le preview; la readiness evolve separatamente tramite `GET /api/holds/status`, senza refetch del manifest/preview o caricamento GLB. Si aggiornano soltanto stati e URL collider delle hold gia note in `Pending`/`Missing`, non i metadati o l'insieme dei modelli della sessione.
+- Criteri watcher: prima richiesta dopo `1 s`, richieste seriali con intervallo base `1 s` dalla conclusione della precedente; solo finche esistono hold `Pending`/`Missing`. `Ready`/`Failed` sono terminali per il watcher; nessun timer o richiesta dopo dispose. Errori transitori conservano l'ultimo stato, vengono segnalati e ritentati con backoff `2, 4, 8, 16, 30 s`, reset a `1 s` al successo; timeout richiesta `10 s`, abort su timeout/dispose. Nessun polling per frame o mouse move.
 
 **REQ-CAT-004 - Lazy load GLB.**
 - Criteri: GLB hold richiesto solo su `Utilizza` o `Dettagli`.
@@ -111,7 +119,9 @@ GLB obbligatorio; texture/asset opzionali.
 - L'inserimento deve essere annullato soltanto se nessuna posizione valida e disponibile dopo esaurimento deterministico di tutti i candidati nel dominio di ricerca.
 - Criteri: la hold compare in una posizione detached libera, non compenetra, non viene agganciata automaticamente e piu hold possono essere aggiunte contemporaneamente.
 
-## FIS - Fisica, snap, movimento
+## FIS - Fisica, aggancio, movimento
+
+Eccezione di release `DEC-029`: i controlli collisione e le soglie restano obbligatori per tutti i requisiti di posa e movimento, ma v0.0.1 accetta i limiti noti di Rapier `0.12.0`, senza garanzia universale di CCD, impenetrabilita o agganciabilita. Limiti e relativo stato sono in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md); l'accettazione non implica una soluzione generale implementata.
 
 **REQ-FIS-001 - Sistema unita.**
 - Criteri: 1 unita = 1 metro, sistema destrorso coerente three.js.
@@ -124,10 +134,13 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - Il CCD e l'assenza di tunneling si applicano alle trasformazioni reali incrementali e alle pose committate.
 - Il percorso visuale della shadow e il teletrasporto editoriale endpoint-only dei drag non sono una simulazione fisica e sono esclusi dal requisito di tunneling.
 - Criteri: nessun tunneling nei click incrementali e nei movimenti cinematici reali; un endpoint drag libero oltre un ostacolo intermedio e accettato se la posa finale e valida.
-- Verifica corrente dei click: shape cast solo a rotazione fissa e da partenza separata fino al primo contatto; contatti iniziali e rotazione sono gestiti da intervalli ricorsivi con clearance rispetto al massimo moto dei punti. Intervalli irrisolti bloccati conservativamente. Le regressioni non certificano geometrie arbitrarie: limiti in `REQ-FIS-011` e `DEC-025`.
+- Verifica dei click: shape cast solo a rotazione fissa e da partenza separata fino al primo contatto; contatti iniziali e rotazione sono gestiti da intervalli ricorsivi con clearance rispetto al massimo moto dei punti. Intervalli irrisolti bloccati conservativamente; vale l'eccezione di release della sezione FIS.
 
-**REQ-FIS-004 - KinematicCharacterController.**
-- Criteri: movimento move-and-slide con blocco componenti in collisione e mantenimento componenti libere.
+**REQ-FIS-004 - Click cinematici al prefisso valido, senza sliding.**
+- Per `DEC-028` (approvazione esplicita utente), il click conserva un prefisso conservativo del movimento richiesto nella stessa direzione, entro riproiezione e surface-lock locali. Al blocco non deve scomporre il movimento per mantenere componenti libere, aggirare l'ostacolo o avviare move-and-slide automatico. Anche la rotazione incrementale si arresta al prefisso angolare validato; gli intervalli irrisolti non autorizzano ulteriori commit.
+- Criteri: avanzamento integrale quando il percorso e valido, prefisso o arresto quando bloccato/irrisolto, nessuna deviazione automatica tangenziale all'ostacolo. `maximumValidPoseFraction` coordina shape-cast/contact query native Rapier; non introduce un altro motore fisico o hull frontend. Autostep, snap-to-ground, dinamica e impulsi restano esclusi.
+- KinematicCharacterController: fondazione legacy/opzionale, non necessario nei click attivi; la sua presenza e i test foundation non dimostrano la semantica corrente. Drag e riposizionamenti editoriali restano endpoint-only.
+- Prevalenza: `DEC-028` sostituisce esplicitamente il precedente criterio move-and-slide; prefisso senza sliding approvato, non una scelta ancora aperta.
 
 **REQ-FIS-005 - Origine hold.**
 - Criteri: rotazione attorno al punto di contatto posteriore.
@@ -151,7 +164,7 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - La rotazione e disponibile soltanto in modalita `rotating` per una hold attached.
 - Click senza drag sulle frecce circolari: `1 grado`, con validazione immediata come nella prima implementazione 9UX.
 - Il drag crea una shadow 3D runtime, ruotata attorno alla normale corrente e quantizzata a `1 grado`, mentre la hold reale resta invariata.
-- Durante il drag non vengono eseguite query di collisione; al rilascio viene validata soltanto la posa endpoint.
+- Durante il drag non vengono eseguite query di collisione; al rilascio esattamente una query applicativa endpoint solo se il candidato e cambiato e disponibile, nessuna per no-change o candidato indisponibile.
 - Endpoint valido: commit atomico. Endpoint invalido: rollback totale, nessun angolo parziale applicato.
 - Criteri: twist candidato derivato dallo snapshot iniziale; shadow piu arco/linea; pointer capture; camera congelata; nessuna shortcut globale.
 
@@ -161,12 +174,12 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - Ogni click senza drag applica `0.01 m`; piu click singoli producono piu passi indipendenti.
 - Ogni freccia e anche origine di un drag lungo la propria direzione screen-space; la componente pointer perpendicolare viene ignorata.
 - Durante il drag la hold reale resta invariata, una shadow 3D runtime segue aderente alla parete e una linea/freccia gialla mostra origine e target richiesto.
-- Durante il drag non vengono eseguite query di collisione; al rilascio viene validata soltanto la posa endpoint.
+- Durante il drag non vengono eseguite query di collisione; al rilascio esattamente una query applicativa endpoint solo se il candidato e cambiato e disponibile, nessuna per no-change o no-hit.
 - Endpoint valido: commit atomico di posizione, normale e inclinazione. Endpoint invalido: rollback totale, nessuna posizione parziale applicata.
 - Criteri: nessun comando avanti/indietro; nessun limite totale di distanza; pointer release committa o annulla; pointercancel/Escape annullano; nessuna shortcut globale.
 
 **REQ-FIS-011 - No compenetrazione.**
-- Tutto il TriMesh, incluso il retro non classificato, e impenetrabile durante spostamento, rotazione e sgancio.
+- Tutto il TriMesh, incluso il retro non classificato, deve partecipare ai controlli di non compenetrazione durante spostamento, rotazione e sgancio, con l'eccezione di release della sezione FIS.
 - Aggancio e sgancio diretto validano la posa finale candidata ma non simulano il percorso editoriale verso la destinazione.
 - Il contatto a distanza zero e valido; la tolleranza geometrica verso la parete e configurabile in `1..10 mm` inclusi, con decimali e default `5 mm`; fra prese resta immutabile a `1 mm`. L'epsilon numerico separato resta `2e-6 m` (`DEC-026`, che supera soltanto la parte tolleranza di `DEC-025`).
 - `PhysicsWorld` usa il minimo per contatto di `distance + tolerance`, non la distanza grezza piu profonda con una soglia unica. Questo margine governa sia gli endpoint sia gli intervalli dei click; uno scontro fra prese non puo essere mascherato da una maggiore penetrazione parete entro la propria soglia.
@@ -175,17 +188,19 @@ Gravita off, corpi hold cinematici, no dinamica, no inerzia, no rimbalzo, no att
 - I drag di spostamento e rotazione validano esclusivamente l'endpoint al rilascio; il percorso puo attraversare ostacoli per scelta editoriale esplicita.
 - Criteri: ogni posa committata deve rispettare la soglia del singolo contatto con il solo epsilon numerico dichiarato; endpoint drag invalido annulla integralmente il drag; nessun commit parziale. Gli sweep da partenza separata continuano a fermarsi prima del primo contatto, anche con il pavimento, senza avanzare fino alla profondita tollerata.
 - Configurazione: `source/frontend/public/physics-config.json` contiene soltanto `{"wallPenetrationToleranceMm":5}` come valore iniziale. Numero JSON finito, senza virgolette, decimali con punto, nessun commento; chiavi sconosciute, valori fuori intervallo o non numerici sono invalidi. Non esiste una chiave configurabile per la tolleranza fra prese.
-- Bootstrap: una sola fetch con `cache: 'no-store'`, prima di creare la scena; nessuna rilettura durante le interazioni. File invalido, HTTP non riuscito, parsing o rete falliti impediscono l'avvio senza fallback silenzioso; messaggio gestito nella pagina, niente eccezioni `pageerror` non gestite. Questo handling e limitato alla configurazione, non chiude la gestione globale errori.
+- Bootstrap: una sola fetch con `cache: 'no-store'`, prima di creare la scena; nessuna rilettura durante le interazioni. File invalido, HTTP non riuscito, parsing o rete falliti impediscono l'avvio senza fallback silenzioso; messaggio gestito nella pagina, niente eccezioni `pageerror` non gestite. Per la gestione globale errori valgono i requisiti ERR.
 - Operativita: modifica del file servito e reload applicano il valore alla nuova sessione. In sviluppo nessun riavvio backend/frontend o compilazione; Vite puo ricaricare automaticamente dopo una modifica a `public`. Esportare prima di modificare: reload perde la sessione e JPG non salva lo stato editabile. In produzione installazione/build iniziale della funzionalita necessari; poi modifica del `dist/physics-config.json` distribuito e reload senza rebuild/riavvio su server statico. Modifiche al solo sorgente richiedono rebuild/copia nel deploy; conservare il valore permanente in `public`, perche il build sovrascrive `dist`. Server/proxy/cache devono rispettare `no-store`.
-- Limiti aperti dell'implementazione Rapier `0.12.0`: profondita per faccia potenzialmente sottostimata vicino alle giunzioni interne dei triangoli; contenimento completo dentro un TriMesh chiuso non rilevato senza intersezione superficiale. Il requisito non e integralmente certificato per geometrie arbitrarie degeneri o volumi solidi; follow-up in `DEC-025`.
+- Accettazione v0.0.1: vale l'eccezione di release FIS approvata in `DEC-029`, coerente con `C17`/`C18`; le soglie si applicano alle query richieste, senza dichiarare infallibile la rilevazione su geometrie arbitrarie.
 
 **REQ-FIS-012 - Separazione mesh/collider.**
 - Criteri: fisica usa solo collider Rapier.
+- Parete e istanze fisiche hanno mesh e collider separati; shadow/overlay visual-only non hanno collider o rigid body (`C6`).
 
 **REQ-FIS-013 - Parete TriMesh statica client-side.**
 - Tutti i triangoli del modello partecipano al collider e sono candidabili per l'aggancio, indipendentemente da normale, inclinazione, prominenza, curvatura o cavita.
 - Il retro non viene classificato o filtrato per il targeting; un uso intenzionale del retro e fuori ambito ma resta fisicamente collidente.
 - Criteri: collider derivato da tutti i vertici/triangoli parete lato client; nessun filtro basato su `+Z` durante targeting e collisioni.
+- Candidabilita di tutti i triangoli non significa validita di tutte le pose: resta obbligatoria la validazione dell'intero hull, con l'eccezione di release FIS.
 
 **REQ-FIS-014 - Target e degeneri deterministici.**
 - Criteri: normali finite; raggruppamento e tie-break deterministici; target privo di hit non agganciabile; posa invalida non modifica la hold.
@@ -208,14 +223,17 @@ Uso SharpGLTF.
 - Criteri: vertici letti da GLB via SharpGLTF.
 
 **REQ-HUL-003 - Formato collider JSON.**
-`sourceHash`, `vertices`, `indices` (opzionale).
-- Criteri: schema valido per ogni collider generato.
+`sourceHash`, `vertices`, `indices` tutti obbligatori e non null (`DEC-028`).
+- Criteri: `sourceHash` SHA-256 del GLB con prefisso `sha256:` e 64 cifre esadecimali; `vertices` array piatto XYZ di numeri finiti, almeno 12 valori e cardinalita multipla di 3; `indices` array di interi non negativi, almeno 12 valori e cardinalita multipla di 3, ciascuno inferiore al numero di vertici. Le facce triangolari descrivono l'hull generato dal backend; nessuna ricostruzione hull nel browser.
+- `ColliderDocument` backend e schema OpenAPI devono dichiarare gli indici obbligatori. Riuso solo con hash coerente e geometria valida; indici mancanti, nulli, vuoti o fuori intervallo invalidano il file anche con hash uguale. `HoldColliderDocument` e `convexMesh` consumano i dati precalcolati; il frontend verifica anche rappresentabilita finita dei vertici in float32.
+- Non sono necessari migrazione o supporto retrocompatibile per documenti senza indici. La normale invalidazione/rigenerazione backend resta `REQ-HUL-004`, non un percorso di migrazione.
 
 **REQ-HUL-004 - Invalidazione hash.**
 - Criteri: hash uguale -> riuso; hash diverso -> rigenerazione.
 
 **REQ-HUL-005 - Generazione asincrona non bloccante.**
 - Criteri: backend disponibile anche con collider in generazione.
+- Le prese devono diventare utilizzabili nel catalogo man mano che il collider e pronto, senza reload della sessione. `GET /api/holds/status` restituisce HTTP `200`, `no-store`, array di soli `{ id, colliderStatus, colliderUrl }`; stati `Missing`, `Pending`, `Ready`, `Failed`, URL `/api/holds/{id}/collider` solo per `Ready`, altrimenti `null`. Nessun metadato preview/modello, hash o geometria nella risposta; discovery senza leggere il contenuto GLB. Dopo la discovery iniziale, ID mai accodati nel job store risultano `Failed`, anche se la directory torna leggibile o contiene un collider non verificato; prima valgono i fallback `Missing`/`Ready`, senza sovrascrivere stati espliciti. Il worker elabora il backlog iniziale, non esegue hot reload. Il watcher segue `REQ-CAT-003`; test backend reali e browser simulati restano evidenze distinte.
 
 **REQ-HUL-006 - Consumo collider dal frontend.**
 - Criteri: nessun calcolo hull nel frontend.
@@ -293,7 +311,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Drag = shadow 3D trasparente piu arco/linea gialla; angolo candidato quantizzato a `1 grado` e calcolato dallo snapshot iniziale.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
 - Durante il drag OrbitControls, zoom e pan sono completamente disabilitati.
-- Nessuna validazione fisica avviene su pointermove; al pointerup si valida una sola volta l'endpoint e si committa o annulla integralmente.
+- Nessuna validazione fisica avviene su pointermove; al pointerup esattamente una query applicativa endpoint (`validatePose`) solo se il candidato e cambiato e disponibile, poi commit o annullamento integrale. No-change, candidato indisponibile e annullamento: zero query endpoint e zero commit. Le query native interne su piu collider non sono ulteriori validazioni applicative.
 - Criteri: hold reale immutata durante drag; endpoint valido committato una volta; endpoint invalido lascia posa e twist iniziali; cleanup su pointerup, pointercancel, lostpointercapture, blur, cambio selezione, rimozione ed Escape.
 
 **REQ-UX-007 - Gizmo movimento.**
@@ -304,7 +322,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - La modalita resta attiva fino a `Escape`; click esterno non la chiude.
 - Durante pointermove e consentito un raycast globale sul primo punto visibile, ma nessuna validazione Convex Hull o collision query.
 - Durante il drag libero il contact point coincide con il puntatore. La shadow usa il primo punto visibile dell'intero modello, puo passare fra pannelli e adegua posizione e orientamento alla nuova normale trasportando il twist con la rotazione minima; non viene validato il percorso intermedio.
-- Al pointerup viene validato esclusivamente l'endpoint; endpoint invalido annulla integralmente il drag.
+- Al pointerup esattamente una query applicativa endpoint solo se il candidato e cambiato e disponibile; no-change, no-hit e annullamento non eseguono query endpoint ne commit. Endpoint invalido annulla integralmente il drag.
 - Criteri: direzioni coerenti con lo schermo; shadow sul punto visibile richiesto; nessun limite totale; hold reale immutata fino al commit; cambio pannello consentito; commit aggiorna punto, normale di aggancio e orientamento; cleanup completo su annullamento.
 
 **REQ-UX-008 - Interazione camera durante targeting.**
@@ -320,7 +338,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-UX-010 - Risultati e feedback.**
 - Le azioni scena restituiscono esiti distinguibili: `applied`, `blocked`, `invalid-target`, `not-available`, `previewing`, `committed`, `cancelled`, `invalid-endpoint`, `surface-limit`, con motivo non tecnico.
-- La diagnostica locale espone un `reason` opzionale: `wall-collision`, `hold-collision`, `no-surface`, `surface-gap`, `normal-limit`, `no-change`, `path-unresolved`. Un percorso irrisolto non va presentato come collisione accertata; lo snapshot dell'ultima query posa e consultabile senza log persistenti o rete per frame. Non sostituisce la gestione globale errori, differita dal primo gruppo (`DEC-025`).
+- La diagnostica locale espone un `reason` opzionale: `wall-collision`, `hold-collision`, `no-surface`, `surface-gap`, `normal-limit`, `no-change`, `path-unresolved`. Un percorso irrisolto non va presentato come collisione accertata; lo snapshot dell'ultima query posa e consultabile senza log persistenti o rete per frame. Non sostituisce la gestione globale errori definita nei requisiti ERR.
 - Lo snapshot read-only `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm` espone i valori attivi, normalmente `{ wall: 5, holds: 1 }`. `lastPoseDiagnostic.toleranceMeters` indica la soglia del contatto governante selezionato dal minimo `distance + tolerance`, non necessariamente quello con distanza grezza piu profonda; non e un controllo per modificare la configurazione.
 - Criteri: nessun messaggio `comando applicato` quando la trasformazione non avviene; errore locale non chiude il popup o la modalita salvo necessita.
 
@@ -340,6 +358,8 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 ## PRF - Prestazioni
 
+Per v0.0.1 i criteri prestazionali restano obiettivi richiesti; limiti del metodo, delle misure e della copertura sono eccezioni di release accettate in `DEC-029`, documentate in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md). Non sono una certificazione di tutti gli hardware, asset o FPS durante input.
+
 **REQ-PRF-001 - Hardware target.**
 - Criteri: scenario validato su PC domestico con GPU integrata WebGL 2.0.
 
@@ -347,7 +367,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: almeno 40 hold + parete interattive.
 
 **REQ-PRF-003 - Reattivita.**
-- Criteri: risposta percepita immediata sui comandi principali; preview drag aggiornata al massimo una volta per frame; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; movimento preview usa al massimo i raycast geometrici necessari ai sottopassi locali; validazione endpoint tipica <= `50 ms`, caso complesso <= `100 ms`, nessun long task > `200 ms`.
+- Criteri: risposta percepita immediata sui comandi principali; preview drag aggiornata al massimo una volta per frame; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; movimento preview usa un singolo raycast globale sul modello per aggiornamento, senza sottopassi locali o surface-lock del drag (`DEC-024`); validazione endpoint tipica <= `50 ms`, caso complesso <= `100 ms`, nessun long task > `200 ms`.
 
 **REQ-PRF-004 - Framerate.**
 - Criteri: target indicativo >= 30 FPS durante interazione.
@@ -360,44 +380,66 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 ## ERR - Gestione errori
 
+Le limitazioni di copertura e classificazione sono eccezioni di release accettate per v0.0.1 (`DEC-029`), non garanzie universali di recupero: [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md). Restano richiesti i controlli e i contratti seguenti.
+
 **REQ-ERR-001 - Gestione centralizzata backend/frontend.**
+- Criteri: backend con contratto uniforme nella pipeline applicativa; frontend con `AppError`/`toAppError`, helper `api/http.ts`, `ErrorReporter`, listener `error`/`unhandledrejection` e boundary dei callback asincroni/render/UI. Il reporter non deve propagare errori del proprio trasporto o callback di notifica, ne sopprimere la diagnostica nativa del browser.
 
 **REQ-ERR-002 - Backend error contract.**
 - Criteri: ErrorId univoco, status coerente, messaggio utente non tecnico.
+- JSON uniforme `{ errorId, requestId, message }` e header `X-Request-Id`, correlati al log. Comprende binding/validazione MVC, risultati HTTP falliti, route/risorse mancanti, metodo/media type non supportato, payload troppo grande ed eccezioni propagate. OpenAPI deve documentare gli errori degli endpoint insieme ai successi.
+- HTTP `416` usa ErrorResponse e lo stesso ErrorId nei log, mantenendo `Content-Range: bytes */<lunghezza>`; HTTP `206` mantiene il contenuto binario parziale. Il middleware di completamento HTTP usa il logger Serilog dell'host via DI, non il logger statico.
+- Limiti di trasporto: risposta gia iniziata non riscrivibile, da interrompere dopo logging; cancellazione client non tradotta in `500`; errori di proxy/trasporto prima della pipeline fuori dal controllo applicativo. Non dichiarare uniformita universale per tali casi.
 
 **REQ-ERR-003 - Nessuna esposizione dettagli tecnici.**
 - Criteri: assenza stack trace/path/config in risposte utente.
+- Frontend: solo messaggi applicativi sicuri, mai `message` remoto/HTML/JSON arbitrario o proprieta grezze dell'eccezione. Conservare solo identificativi validati; `AppError` usa contesto limitato e sanitizzato. Non inoltrare stack, URL, payload o dettagli sensibili al reporter.
 
 **REQ-ERR-004 - Copertura categorie errori frontend.**
 - Criteri: copertura JS, REST/HTTP, model load/parsing, three.js, Rapier, export immagine, UI.
+- Categorie disponibili nel codice: `Unknown`, `JavaScript`, `Network`, `Http`, `Parsing`, `AssetLoad`, `Configuration`, `Rendering`, `Physics`, `Export`, `UI`. La presenza nell'unione di tipi non prova classificazione o intercettazione di ogni ramo: globali e callback possono ancora produrre `Unknown`. Vale l'eccezione di release della sezione ERR.
 
 **REQ-ERR-005 - Isolamento errori locali.**
 - Criteri: errore su singola hold non blocca il resto quando possibile.
+- Guasti recuperabili devono rilasciare risorse/stato parziale; se un callback compromette la coerenza della scena, fermare il flusso coinvolto e comunicare il problema in sicurezza, senza promettere prosecuzione illimitata. Blocco collisionale e target invalido attesi sono feedback, non errori da notificare per frame.
 
 ## LOG - Logging
 
+Le limitazioni di logging e diagnostica sono eccezioni di release accettate per v0.0.1 (`DEC-029`), descritte in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md). Restano obbligatori sanitizzazione, dati non sensibili e comportamento bounded; l'accettazione non promette consegna o riconoscimento universale dei dati sensibili.
+
 **REQ-LOG-001 - Logging server-side asincrono non bloccante.**
+- Criteri: consumer backend bounded (default `2048` eventi), overflow scarta nuovi eventi senza attendere I/O; scrittura/retention sul consumer, drain in shutdown. `202` indica accettazione best-effort, non garanzia di persistenza contro filtri, overflow o guasti I/O.
 
 **REQ-LOG-002 - Frontend senza persistenza log locale.**
+- Criteri: `ErrorReporter` solo in memoria, coda massima `20`, deduplica massima `100` chiavi per `30 s`; un invio alla volta, throttle `1 s`, massimo `3` tentativi totali, backoff esponenziale base `1 s` con tetto `8 s`, timeout invio `5 s`. Rete/timeout e HTTP `408`/`429`/`5xx` ritentabili; altri rifiuti scartati. Overflow/tentativi esauriti scartano senza bloccare la UI; dispose rimuove listener, timer, coda/cache e annulla l'invio. Il trasporto log non segnala i propri fallimenti al reporter.
 
 **REQ-LOG-003 - Logging JSON strutturato.**
 - Criteri: campi minimi timestamp/livello/categoria/messaggio/componente + RequestId/ErrorId quando disponibili.
+- `POST /api/logs`: obbligatori `level` (`Trace..Critical`, non `None`), `category` e `component` (1..80 caratteri), `message` (1..2000); opzionali `errorId` GUID, `requestId` (1..128 caratteri ASCII alfanumerici o `._:-`) e `context` dizionario stringa/stringa (massimo 20 voci, chiavi <=80, valori <=500; niente JSON annidato). Limite body `32768` byte.
+- Risposta `202` esattamente `{ errorId, requestId }`: per Error/Critical preserva ErrorId fornito o ne genera uno, per altri livelli `null`; RequestId originale fornito o quello di ingestione. `X-Request-Id` e `IngestionRequestId` identificano sempre la richiesta di ingestione; la ricevuta non sostituisce la correlazione originale nel frontend. Il reporter corrente invia eventi di livello `Error`.
 
 **REQ-LOG-004 - Soglia configurabile.**
 - Criteri: default `Information` in `appsettings.json`.
+- `Logging:LogLevel` usa livelli .NET `Trace..Critical` e `None` per disabilitare, con override arbitrari di categoria a prefisso piu lungo. Mapping Serilog coerente: `Verbose` -> `Trace`, `Fatal` -> `Critical` nell'output JSON; nessun uso di `None` come livello evento.
 
 **REQ-LOG-005 - Rotazione/retention.**
 - Criteri: file giornaliero, retention 7 giorni.
+- Eta effettiva da `LastWriteTimeUtc < utcNow - 7 giorni`, non conteggio file; selezionare solo il pattern rolling configurato, preservando file estranei. Pulizia all'avvio consumer e al primo ciclo dopo cambio data UTC, anche con timer idle di un minuto; errori di accesso/I/O gestiti best-effort tramite SelfLog, non garanzia di cancellazione quando il filesystem la impedisce.
 
 **REQ-LOG-006 - Sanitizzazione.**
 - Criteri: assenza dati sensibili nei log.
+- Sanitizzare ricorsivamente valori strutturati prima del rendering del messaggio e applicare limiti. Contesto browser sconosciuto oscurato; allowlist backend: `operation`, `assetId`, `holdId`, `status`, `statusCode`, `errorType`, `retryCount`, `phase`, `resource`, `errorClass`, `event`. Anche i valori ammessi sono sanitizzati e limitati.
+- I chiamanti devono inviare solo sintesi diagnostiche non sensibili, non payload grezzi. Le euristiche correnti non garantiscono riconoscimento di ogni dato personale arbitrario non etichettato; vale l'eccezione di release della sezione LOG, senza autorizzare l'invio di dati sensibili.
 
 **REQ-LOG-007 - Stack logging vincolato.**
 - Criteri: uso Serilog nel backend.
 
 ## TST - Test automatici
 
+La copertura non esaustiva e i casi limite sono attenzioni accettate, non bloccanti per la chiusura di v0.0.1: [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md). Restano le suite e i criteri seguenti; test falliti o non eseguiti non diventano superati per effetto dell'accettazione.
+
 **REQ-TST-001 - CI fail-on-test-failure.**
+- Criteri: un test obbligatorio fallito deve far fallire la pipeline. Edge/Firefox sono verifiche esplorative separate, non gate di release (`REQ-ARC-007`, `DEC-029`); i relativi esiti vanno conservati come tali.
 
 **REQ-TST-002 - Unit test backend xUnit.**
 
@@ -407,6 +449,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 **REQ-TST-004 - Integrazione REST.**
 
 **REQ-TST-005 - E2E Playwright flussi principali.**
+- Criteri: verifiche di release sul target ufficiale Chrome; Chromium puo fornire regressioni di supporto, senza sostituire la verifica del browser ufficiale.
 
 **REQ-TST-006 - Test fisica headless completi (Vitest).**
 - Criteri: copertura dei 5 scenari obbligatori da app_definition.md:
@@ -419,7 +462,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 **REQ-TST-007 - Determinismo test fisici.**
 
 **REQ-TST-008 - Test snap e degeneri completi.**
-- Stato: requisito storico della fase 8 congelata. I relativi test documentano la baseline precedente e devono essere sostituiti o rimossi dalla fase 9UX quando verificano comportamenti legacy non piu normativi.
+- Stato: requisito storico della fase 8 congelata, escluso dai 101 requisiti attivi. Le verifiche dell'interazione corrente sono definite in `REQ-TST-010`; i comportamenti legacy seguenti non sono normativi.
 - Criteri storici: no snap oltre 5 cm, snap entro 5 cm, normale del punto di contatto corretta, rotazione post-snap attorno alla normale, movimento tangenziale post-snap, fallback normale deterministico, tie-break deterministico.
 
 **REQ-TST-009 - Verifica lockfile CI.**
@@ -427,12 +470,13 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 
 **REQ-TST-010 - Test interazione contestuale 9UX.**
 - Criteri: copertura automatica popup, stati, targeting, superficie dominante, target invalido, aggancio diretto, sgancio progressivo e click incrementali.
-- Criteri drag: shadow creata senza richieste PNG/GLB/asset; geometrie e texture condivise; nessun rigid body/collider; shadow esclusa dal picking; hold reale, collider, contact point, normale e twist immutati durante pointermove; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; contact point sotto al mouse nel drag libero; passaggio fra pannelli e adeguamento alla nuova normale; rotazione quantizzata a 1 grado; linea/arco coerenti; nessun limite totale alla distanza richiesta; esattamente una fase di validazione endpoint al pointerup; endpoint valido committato una sola volta; endpoint invalido con rollback totale di tutti gli stati; endpoint libero oltre ostacolo intermedio accettato; cleanup pointer/materiali/preview; camera congelata; shadow esclusa dall'export; nessuna perdita risorse dopo drag ripetuti.
+- Criteri drag: shadow creata senza richieste PNG/GLB/asset; geometrie e texture condivise; nessun rigid body/collider; shadow esclusa dal picking; hold reale, collider, contact point, normale e twist immutati durante pointermove; nessuna `validatePose`, `contactShape` o shape-cast Convex Hull durante pointermove; contact point sotto al mouse nel drag libero; passaggio fra pannelli e adeguamento alla nuova normale; rotazione quantizzata a 1 grado; linea/arco coerenti; nessun limite totale alla distanza richiesta; esattamente una query applicativa endpoint al pointerup solo per candidato cambiato e disponibile, zero per no-change/no-hit/annullamento; endpoint valido committato una sola volta; endpoint invalido con rollback totale di tutti gli stati; endpoint libero oltre ostacolo intermedio accettato; cleanup pointer/materiali/preview; camera congelata; shadow esclusa dall'export; nessuna perdita risorse dopo drag ripetuti.
 
 ## DOC - Documentazione
 
 **REQ-DOC-001 - Documentazione inline esaustiva in italiano.**
 - Criteri: tutte le classi e tutti i metodi backend/frontend documentati in italiano.
+- I gate strutturali non certificano da soli lingua o qualita semantica della documentazione; resta richiesto il controllo del contenuto.
 
 **REQ-DOC-002 - Documento applicativo completo.**
 - Criteri: descrive logica completa, struttura software, avvio live/debug e separa esplicitamente baseline storica 0-9 dalla UX attiva dalla fase 9UX.
@@ -444,6 +488,7 @@ La pipeline deve fallire se non e rispettato il comportamento hull richiesto.
 - Criteri: copre scopi, risultati attesi, framework, strumenti.
 
 **REQ-DOC-005 - Cartella documentazione dedicata.**
+- La guida italiana [backend-contracts.md](../docs/backend-contracts.md) documenta i contratti backend; documentazione applicativa in `docs`, report originali di fase storici.
 
 ## DEP - Gestione dipendenze
 

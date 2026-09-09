@@ -25,10 +25,10 @@ public sealed class SafeJsonLogFormatter : ITextFormatter
     /// </summary>
     public void Format(LogEvent logEvent, TextWriter output)
     {
-        var properties = logEvent.Properties.ToDictionary(
-            item => item.Key,
-            item => IsSensitiveKey(item.Key) ? "[REDACTED]" : sanitizer.Sanitize(Render(item.Value), 2000),
-            StringComparer.Ordinal);
+        var safeEvent = new LogEvent(logEvent.Timestamp, logEvent.Level, null, logEvent.MessageTemplate,
+            logEvent.Properties.Take(100).Select(item => new LogEventProperty(item.Key, SanitizeProperty(item.Key, item.Value))));
+        var properties = safeEvent.Properties.GroupBy(item => sanitizer.Sanitize(item.Key, 200), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => sanitizer.Sanitize(Render(group.First().Value), 2000), StringComparer.Ordinal);
         var category = Get(properties, "Category") ?? Get(properties, "SourceContext") ?? "Application";
         var component = Get(properties, "Component") ?? "Backend";
         properties.Remove("Category");
@@ -40,12 +40,12 @@ public sealed class SafeJsonLogFormatter : ITextFormatter
         var document = new
         {
             timestamp = logEvent.Timestamp.UtcDateTime,
-            level = logEvent.Level.ToString(),
+            level = logEvent.Level switch { LogEventLevel.Verbose => "Trace", LogEventLevel.Fatal => "Critical", _ => logEvent.Level.ToString() },
             category = sanitizer.Sanitize(category, 200),
-            message = sanitizer.Sanitize(logEvent.RenderMessage(), 4000),
+            message = sanitizer.Sanitize(safeEvent.RenderMessage(), 4000),
             component = sanitizer.Sanitize(component, 200),
-            requestId = Get(logEvent.Properties, "RequestId"),
-            errorId = Get(logEvent.Properties, "ErrorId"),
+            requestId = Get(safeEvent.Properties, "RequestId"),
+            errorId = Get(safeEvent.Properties, "ErrorId"),
             exception = logEvent.Exception is null ? null : sanitizer.Sanitize(logEvent.Exception.ToString(), 16000),
             context = properties.Count == 0 ? null : properties
         };
@@ -77,14 +77,23 @@ public sealed class SafeJsonLogFormatter : ITextFormatter
     }
 
     /// <summary>
-    /// Riconosce proprietà il cui nome identifica direttamente un dato sensibile.
+    /// Sanitizza ricorsivamente le proprieta prima del rendering del messaggio.
     /// </summary>
-    private static bool IsSensitiveKey(string key) =>
-        key.Contains("password", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("passwd", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("token", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("apiKey", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("api_key", StringComparison.OrdinalIgnoreCase)
-        || key.Equals("Authorization", StringComparison.OrdinalIgnoreCase);
+    private LogEventPropertyValue SanitizeProperty(string key, LogEventPropertyValue value, int depth = 0)
+    {
+        if (depth >= 8 || SensitiveDataSanitizer.IsSensitiveKey(key)) return new ScalarValue("[REDACTED]");
+        return value switch
+        {
+            ScalarValue { Value: string text } => new ScalarValue(sanitizer.Sanitize(text, 2000)),
+            ScalarValue scalar when scalar.Value is null or bool or byte or short or int or long or float or double or decimal or Guid or DateTime or DateTimeOffset => scalar,
+            StructureValue structure => new StructureValue(structure.Properties.Take(50)
+                .Select(item => new LogEventProperty(sanitizer.Sanitize(item.Name, 200), SanitizeProperty(item.Name, item.Value, depth + 1)))),
+            DictionaryValue dictionary => new DictionaryValue(dictionary.Elements.Take(50)
+                .GroupBy(item => sanitizer.Sanitize(item.Key.Value?.ToString(), 80))
+                .Select(group => new KeyValuePair<ScalarValue, LogEventPropertyValue>(new ScalarValue(group.Key),
+                    SanitizeProperty(group.First().Key.Value?.ToString() ?? "", group.First().Value, depth + 1)))),
+            SequenceValue sequence => new SequenceValue(sequence.Elements.Take(50).Select(item => SanitizeProperty("", item, depth + 1))),
+            _ => new ScalarValue("[REDACTED]")
+        };
+    }
 }

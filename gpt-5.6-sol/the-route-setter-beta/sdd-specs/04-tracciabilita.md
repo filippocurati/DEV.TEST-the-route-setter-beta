@@ -1,45 +1,70 @@
 # Tracciabilita requisiti
 
+Questa matrice collega requisiti, design ed evidenze; non e una dichiarazione che tutti i criteri siano soddisfatti. **v0.0.1 e CHIUSA E ACCETTATA dall'utente il 2026-09-09 con limiti noti (`DEC-029`).** Il supporto ufficiale e limitato a Chrome Stable desktop con WebGL 2.0 e accelerazione hardware. [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md) e l'unico registro corrente di stato, limiti accettati e punti da rivalutare; matrice e piano macchina sono indici tecnici, non registri autonomi di blocchi alla release. Le verifiche residue riguardano sviluppi futuri e non bloccano questa chiusura.
+
+`DEC-028` chiude le due scelte di `CON06`; gli stati per requisito sono aggiornati nel piano macchina sulla base di codice, verifiche effettive e baseline approvata. CON01..CON05 e CON08 sono implementati nel perimetro documentato; CON07 e CON09 conservano una valutazione tecnica parziale, distinta dall'accettazione della release. I report originali, gli esiti DEC-025/026 e il report JSON del consolidamento con i relativi raw restano evidenze storiche immutate: eventuali dichiarazioni di mancata chiusura precedono `DEC-029`.
+
+## Manifest E Stati Per Requisito
+
+[Manifest macchina](../source/test-traceability.json): `101/101` requisiti attivi mappati, nessun record per `REQ-TST-008` storico. Lo schema resta `ID -> array di percorsi`, relativi a `source`; ogni percorso deve essere un file esistente, non una directory. Il checker richiede tutti i record attivi e rifiuta ID ignoti/storici, array vuoti e percorsi invalidi. Non esegue i test e non certifica le loro asserzioni.
+
+[Piano macchina](../source/conformity-plan.json): `status: closed-with-accepted-limitations` e `releaseAcceptance` registrano la chiusura, separata da `technicalConformity: partial`. Lo stato individuale resta `implemented`, `partial` o `verification-pending`, con ragione e dettagli tecnici `remaining` per ciascuno dei 101 ID; questi ultimi non sono condizioni per chiudere v0.0.1. `historical-excluded` e riservato allo storico fuori dal conteggio attivo, non aggiunge un record normativo. `implemented` significa criterio riscontrato nel perimetro dichiarato, non nuovo pass delle suite. Per requisiti incompletamente verificati il manifest registra i file implementativi; i casi effettivamente presenti e le verifiche mancanti sono distinti nelle ragioni del piano. Per TST/DOC il prodotto richiesto e rispettivamente la suite/il documento.
+
+Gli 81 record prima assenti sono ora mappati senza dichiarare 101 requisiti implementati. CON09 resta tecnicamente parziale per i limiti Rapier su giunzioni e contenimento TriMesh, accettati in ATT01 del registro centrale. ARC-007 e implementato rispetto alla baseline Chrome approvata in `DEC-029`, con Chrome 152.0.7977.76 verificato; Edge/Firefox sono esplorativi (ATT02), senza certificare Firefox Stable dai test del motore Playwright o versioni future di Chrome. CI remota non eseguita. La sintesi prestazionale CON07 conservata nel piano proviene da artifact effettivamente letti: due profili split-phase passati, FPS su carico sintetico separato dall'input reale. Non e il vecchio risultato fase 11 ne una misura di 60 FPS continui durante mouse. Risultati precedenti all'accettazione nel [report consolidato](../phases-outcome/Consolidation_implementation_done.md); limiti accettati in ATT03.
+
+La tabella seguente e una navigazione per famiglie, non prova che esistano test per ogni frase del requisito. Il riscontro implementativo combina test e lettura codice: per esempio i button nativi supportano Enter/Space senza inventare un E2E dedicato. Le lacune su reload, convenzione/origine asset, esaurimento sgancio e matrice automatica TST-010 restano distinte dall'implementazione, con accettazione e rivalutazione futura in ATT04/ATT05 del registro centrale. Il codice non ricentra automaticamente il pivot posteriore: FIS-005 dipende dall'audit asset. Il nuovo test SVG riguarda il MIME delle preview catalogo, non un indicatore di rotazione.
+
+Ultima rivalutazione macchina: 90 `implemented`, 7 `partial`, 4 `verification-pending`, per 101 requisiti attivi. Prima dell'aggiornamento ARC-007 i record erano 89/8/4; solo ARC-007 cambia stato per la nuova baseline ufficiale Chrome, non per nuove prove o riclassificazione dei fail. Il [report macchina](../phases-outcome/Consolidation_verification_results.json) conserva backend Release 110/110, frontend 447/447 e full suite Chromium/Chrome/Firefox 57/57 ciascuna, senza skip/retry. Il vecchio fail stream Firefox resta storico; Edge precedente 54 pass/3 fail download/teardown non e rieseguito ne riclassificato. Provenienza e limiti in `executionEvidence` del piano. CI configurata e exit code locali verificati: nessuna PR o esecuzione remota aggiunta come obbligo. Questo aggiornamento documentale non e una nuova esecuzione delle suite applicative.
+
+## Matrice Di Navigazione
+
 | Requisito | Design | Test principale |
 |---|---|---|
-| REQ-ARC-001..004 | 02 §1, §2 | Integration API + architecture checks |
-| REQ-ARC-005..008 | 02 §1, §4, §6 | E2E reload/no persistence + network assertions |
+| REQ-ARC-001..004 | 02 §1, §2 | Codice host/client, dipendenze e `ApiSmokeTests.cs`; nessun architecture test separato assunto |
+| REQ-ARC-005..008 | 02 §1, §4, §6, DEC-029 | Codice sessione/pipeline, `selection-input.spec.ts` per rete durante drag; reload senza persistenza: lacuna tecnica accettata ATT05. Chrome Stable desktop unico target ufficiale, Chrome 152 full suite 57/57; Edge/Firefox esplorativi ATT02 |
 | REQ-MOD-001..004 | 02 §3, §4 | Unit discovery + integration manifest |
-| REQ-MOD-005 | 02 § Convenzione spaziale degli asset | E2E orientamento iniziale parete |
+| REQ-MOD-005 | 02 § Convenzione spaziale degli asset | `wallLoader.ts`/`wallScene.ts`; audit orientamento/unita asset da completare, `startup.spec.ts` non asserisce tutta la convenzione |
 | REQ-CAT-001..007 | 02 §4, §8 | E2E catalog/use/remove/details |
+| REQ-CAT-003, REQ-HUL-005 | 02 §4, 03 CON01 | `catalog/sessionCatalog.test.ts`: cache immutabile, transizioni, serialita/backoff/timeout/dispose; `e2e/readiness.spec.ts`: due transizioni passate sui quattro runtime senza reload/refetch; backend `ApiContractTests.cs`, `DiscoveryIsolationTests.cs`, `ColliderGenerationWorkerTests.cs` per status/worker reali. Simulazione browser distinta dal worker |
 | REQ-SCN-001..004 | 02 §1, §6, §8 | E2E scena e selezione |
 | REQ-SCN-005 | 02 § Spawn iniziale detached | Unit griglia deterministica + E2E spawn multiplo senza compenetrazione |
 | REQ-FIS-001..005 | 02 §6, §7.9 | Physics suite headless; `physics/poseValidation.test.ts` per continuita click fra endpoint liberi e rotazione |
-| REQ-FIS-006..007 | 02 §7.3, §7.4 | E2E aggancio diretto + sgancio progressivo |
+| REQ-FIS-004 | 02 §6, §7.5, §7.9, DEC-028 | `physics/poseValidation.test.ts` e `physics/realWall.test.ts`: prefisso/continuita; lettura moveSelected/rotateSelected conferma interpolazione/riproiezione locale senza sliding. Foundation KCC solo legacy; garanzie generali CON09 ancora parziali |
+| REQ-FIS-006..007 | 02 §7.3, §7.4 | `snap.spec.ts`: aggancio e primo sgancio libero da 0.50 m; progressione con ostacoli/esaurimento 10 m da verificare |
 | REQ-FIS-008..010 | 02 §7.5..7.9, §8 | Unit click/drag math + E2E gizmo e shadow |
-| REQ-FIS-011..014 | 02 §6, §7.2, §7.3, §7.7, §7.9 | `config/physicsConfig.test.ts`, `physics/poseValidation.test.ts` (soglie separate, minimo per contatto, endpoint/intervalli, violazione accertata prioritaria e diagnostica coerente), `physics/realWall.test.ts` (asset invariati, baseline e passi/twist reali), `e2e/physics-config.spec.ts` (bootstrap/reload/fallimenti, suite finale 43/43) + targeting tests; DEC-026 supera solo la tolleranza DEC-025, limiti numerici aperti |
-| REQ-FIS-015 | 02 §7.5..7.6 | Physics surface-lock dei soli click + E2E shadow globale fra pannelli, esclusa dal lock |
+| REQ-FIS-011..014 | 02 §6, §7.2, §7.3, §7.7, §7.9 | `config/physicsConfig.test.ts`, `physics/poseValidation.test.ts` (soglie separate, minimo per contatto, endpoint/intervalli, violazione accertata prioritaria e diagnostica coerente), `physics/realWall.test.ts` (asset invariati, baseline e passi/twist reali), `e2e/physics-config.spec.ts` (bootstrap/reload/fallimenti; 43/43 solo esito storico DEC-026) + targeting tests; DEC-026 supera solo la tolleranza DEC-025, limiti numerici aperti |
+| REQ-FIS-015 | 02 §7.5..7.6 | Lettura vincoli click 5 gradi/5 mm e test passi reali; E2E shadow globale fra pannelli esclusa dal lock. Nessuna pretesa di test esaustivi ai boundary |
 | REQ-HUL-001..006 | 02 §5 | Hull tests xUnit + integration |
+| REQ-HUL-003, REQ-HUL-006 | 02 §5, DEC-028 | `ColliderProcessorTests.cs`: indici mancanti/nulli/vuoti/fuori intervallo invalidano anche hash uguale; `ApiContractTests.cs`: schema/OpenAPI; `errors/http.test.ts`: consumo/validazione. Suite passate, indici obbligatori, nessuna migrazione/retrocompatibilita o hull frontend |
 | REQ-HUL-007 | 02 §5 | Build guard + test suite hull |
 | REQ-UI-001..004 | 02 §8 | E2E UI, accessibilita ed eliminazione shortcut legacy |
 | REQ-UX-001..002 | 02 § Stato fisico e modalita, §7.6..7.8, §8.1..8.2 | E2E popup, macchina a stati e sessione drag |
 | REQ-UX-003..005 | 02 §7.1..7.3 | Unit footprint/targeting/clustering, coerenza punto-normale + E2E shadow aggancio e raccordo laterale |
 | REQ-UX-006..009 | 02 §7.6..7.9, §8.3..8.5 | Unit pointer/preview math + E2E shadow mouse desktop |
-| REQ-UX-010 | 02 §7.3, §8.2 | Unit result contract, `physics/poseValidation.test.ts` (tolleranza contatto governante e priorita violazione accertata) + E2E `selection-input.spec.ts` e `physics-config.spec.ts`: reason, rollback, snapshot soglie; E2E DEC-025 storico 31/31, DEC-026 finale 43/43 |
+| REQ-UX-010 | 02 §7.3, §8.2 | Unit result contract, `physics/poseValidation.test.ts` (tolleranza contatto governante e priorita violazione accertata) + E2E `selection-input.spec.ts` e `physics-config.spec.ts`: reason, rollback, snapshot soglie; E2E storici DEC-025 31/31, DEC-026 43/43, non conteggi correnti |
 | REQ-IMG-001..004 | 02 §9 | E2E equivalenza vista corrente + esclusione shadow/overlay + export JPG |
-| REQ-PRF-001..006 | 02 §11, 03 FASE 11 | `tests/performance/phase11.spec.ts` + `Phase_11_performance_results.json`: 40 hold, 1920x1080, 60 s, FPS, long task, heartbeat e latenza endpoint |
-| REQ-ERR-001..005 | 02 §7.3, §10 | Error tests backend/frontend; `config/physicsConfig.test.ts` + `e2e/physics-config.spec.ts` per errore config gestito e avvio bloccato (suite E2E finale 43/43), non completamento gestione globale errori |
-| REQ-LOG-001..007 | 02 §10 | Logging structure/sanitization/rotation tests |
+| REQ-PRF-001..006 | 02 §11, 03 FASE 11/CON07 | `tests/performance/phase11.spec.ts` e `conformity-plan.json` sezione performanceEvidence: profili tipico 8/complesso 40 hold, 1920x1080, fasi render/input >=60 s, 2 pass; FPS sintetici separati da input on-demand. `Phase_11_performance_results.json` solo storico |
+| REQ-ERR-001..005 | 02 §7.3, §10.1..10.3 | `errors/AppError.test.ts`, `errors/http.test.ts`, `errors/ErrorReporter.test.ts`, `errors/holdResources.test.ts`, `e2e/errors.spec.ts`, test config; `ApiContractTests.cs`, `ErrorApiIntegrationTests.cs`. Componenti presenti, categorie/boundary da verificare integralmente in CON02/CON03; nessuna garanzia universale per callback, proxy o risposta gia iniziata |
+| REQ-LOG-001..007 | 02 §10.2..10.4 | `LoggingHardeningTests.cs`, `ErrorApiIntegrationTests.cs`, `ApiContractTests.cs`: livelli/category obbligatori, correlazione, filtri, sanitizzazione, coda/drain, retention per eta/cambio data; `errors/ErrorReporter.test.ts`: coda 20, deduplica 100/30 s, throttle/retry/timeout/dispose. CON05 implementato; limiti sanitizzazione e consegna nel piano |
 | REQ-TST-001 | 03 FASE 10 | `.github/workflows/ci.yml`: ogni comando mantiene il proprio exit code bloccante |
-| REQ-TST-002 | 03 FASE 10 | xUnit `TheRouteSetter.Api.Tests` + report TRX CI |
+| REQ-TST-002 | 03 FASE 10 | xUnit `TheRouteSetter.Api.Tests`, esiti Release locali; report TRX configurato in CI, nessun run remoto dichiarato |
 | REQ-TST-003 | 03 FASE 2/10 | `ColliderProcessorTests`: generazione, riuso e rigenerazione hull |
-| REQ-TST-004 | 03 FASE 3/10 | `ApiSmokeTests`, `AssetApiIntegrationTests`, `ErrorApiIntegrationTests` |
-| REQ-TST-005 | 03 FASE 10 | Playwright `tests/e2e/*.spec.ts` + report JUnit/HTML CI |
+| REQ-TST-004 | 03 FASE 3/10, CON01/CON03 | `ApiSmokeTests`, `AssetApiIntegrationTests`, `ErrorApiIntegrationTests`, `ApiContractTests`, `DiscoveryIsolationTests`; asset temporanei isolati tramite `Support/IsolatedApiFactory` |
+| REQ-TST-005 | 03 FASE 10 | Playwright `tests/e2e/*.spec.ts`, esiti locali separati per runtime in executionEvidence; JUnit/HTML configurati anche in CI, non eseguita remotamente |
 | REQ-TST-006 | 03 FASE 6/10 | Vitest `physics/setup.smoke.test.ts`, `physics/poseValidation.test.ts`, `physics/realWall.test.ts`: scenari fisici, continuita click, pavimento/pinna con contatto iniziale, incertezza, broadphase senza narrowphase sui 40 collider lontani e asset reali |
 | REQ-TST-007 | 03 FASE 10 | Ripetizioni in `physics/poseValidation.test.ts` e `physics/realWall.test.ts` + test tie-break e spawn deterministici |
 | REQ-TST-008 | 03 FASE 8 congelata | Test storici snap automatico, sostituiti dalla FASE 9UX |
 | REQ-TST-009 | 02 §12, 03 FASE 0/10 | `npm ci`, `dotnet restore --locked-mode` e verifica diff lockfile in CI |
 | REQ-TST-010 | 02 §7..8, 03 FASE 9UX/10 | Unit UX + E2E drag transazionale, invarianti pointermove, singola validazione endpoint e cleanup pointercancel |
+| REQ-CAT-005..007, REQ-SCN-001..005, REQ-UX-001..010, REQ-IMG-001..004 | 02 §6..9, 03 CON04 | `scene/con04.test.ts`, `interaction/holdOverlay.con04.test.ts`, `e2e/con04.spec.ts`, `e2e/export.spec.ts`: lifecycle/cleanup, transazioni ed export; CON04 implementato nel perimetro documentato, release chiusa con limiti accettati, non copertura esaustiva |
 | DEC-011..023 | 02 §7.1, §7.6..7.9, §8.1..8.4, §9, 03 FASE 9UX | Test report 9UX-bis: report preservato, shadow runtime per targeting/drag, endpoint-only, drag libero/vincolato, verso rotazione, camera congelata, export disabilitato, popup compatto, dettagli condivisi, Escape con deselezione e coerenza punto-normale sui raccordi |
 | DEC-024..025 | 02 §7.3, §7.6, §7.9, §8.2, 03 Primo gruppo precedente | `physics/poseValidation.test.ts`, `physics/realWall.test.ts`, `e2e/selection-input.spec.ts`: drag globale, tolleranza, continuita e diagnostica; esiti storici 215/215 unit e 31/31 E2E confermati, senza certificazione generale di giunzioni interne o contenimento solido; performance SwiftShader fallita, dettagli in `docs/test-automatici.md` |
-| DEC-026 | 02 §7.3, §7.5, §7.9, 03 Configurazione tolleranza corrente | `config/physicsConfig.test.ts`, `physics/poseValidation.test.ts`, `physics/realWall.test.ts`, `e2e/physics-config.spec.ts`; finali unit 331/331 in 12 file ed E2E 43/43 comunicati dall'utente; produzione dist temporanea, file reale 5 -> 3 -> 5 al reload senza rebuild; griglia separata e limiti in `docs/test-automatici.md` e `phases-outcome/Wall_tolerance_configuration_done.md` |
+| DEC-026 | 02 §7.3, §7.5, §7.9, 03 Configurazione tolleranza corrente | Test dell'agente: 331/331 unit in 12 file, 43/43 E2E; produzione dist temporanea 5 -> 3 -> 5 al reload senza rebuild. Conferma funzionale utente successiva, non esecuzione utente delle suite. Dettagli e limiti in `docs/test-automatici.md` |
+| DEC-027 | 03 Riconciliazione applicazione, 06 Stato versione v0.0.1 | Audit storico codice/specifiche, CON01..CON09 e accettazione utente del bug; provenienza conservata nel registro centrale. Non nuova certificazione applicativa |
+| DEC-028 | 01 REQ-FIS-004 / REQ-HUL-003, 02 §5..7.9, 03 CON06 | Approvazione esplicita utente: prefisso senza sliding e indici obbligatori; CON06 CHIUSO. Evidenze nel report consolidato, stato corrente e limiti accettati nel registro centrale `06-stato-versione-v0.0.1.md` |
+| DEC-029 | 01 REQ-ARC-007 ed eccezioni di release, 06 Stato versione v0.0.1 | v0.0.1 chiusa e accettata dall'utente il 2026-09-09, supporto ufficiale solo Chrome Stable desktop; ATT01..ATT07 accettati e non bloccanti. Nessun fail riclassificato o verifica mancante dichiarata superata |
 | REQ-DEP-001..003 | 02 §12 | Restore/build deterministico in CI |
 | REQ-DEP-004 | 02 §12, 03 FASE 0 | Dependency baseline verification |
-| REQ-DOC-001..005 | 03 FASE 12 | `docs/applicazione.md`, `docs/test-automatici.md`, `docs/checklist-fase-12.md` e `npm run test:docs` |
+| REQ-DOC-001..005 | 03 FASE 12, CON08 | `npm run test:docs`: tutti i 24 file TS applicativi, ultimo inventario 264/264 (precedente 261/261), arrow/function expression escluse; XML backend audit manuale di 28 file esatti, non gate automatico. Lingua/semantica non certificate. Guida backend italiana in docs; stato e limiti documentali nel registro centrale ATT07 |
 
 Regola: ogni nuova modifica deve aggiornare questa matrice quando impatta requisiti o test.

@@ -39,28 +39,12 @@ public sealed class ExceptionHandlingMiddleware
     /// </summary>
     private async Task WriteErrorAsync(HttpContext context, Exception exception)
     {
-        var errorId = Guid.NewGuid().ToString("N");
         var statusCode = MapStatusCode(exception);
-        var message = statusCode switch
-        {
-            StatusCodes.Status400BadRequest => "La richiesta non e valida.",
-            StatusCodes.Status404NotFound => "La risorsa richiesta non e disponibile.",
-            _ => "Si e verificato un errore inatteso. Riprova o comunica l'identificativo al supporto."
-        };
-
-        using (logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["ErrorId"] = errorId,
-            ["RequestId"] = context.TraceIdentifier,
-            ["Component"] = "Backend",
-            ["Category"] = "UnhandledException"
-        }))
-        {
-            logger.LogError(exception, "Errore backend non gestito {ErrorId}", errorId);
-        }
+        var response = ApiErrors.Create(context, statusCode, exception, logger);
 
         if (context.Response.HasStarted)
         {
+            context.Abort();
             return;
         }
 
@@ -68,7 +52,7 @@ public sealed class ExceptionHandlingMiddleware
         context.Response.StatusCode = statusCode;
         context.Response.Headers["X-Request-Id"] = context.TraceIdentifier;
         await context.Response.WriteAsJsonAsync(
-            new ErrorResponse(errorId, context.TraceIdentifier, message),
+            response,
             context.RequestAborted);
     }
 
@@ -77,7 +61,8 @@ public sealed class ExceptionHandlingMiddleware
     /// </summary>
     private static int MapStatusCode(Exception exception) => exception switch
     {
-        BadHttpRequestException or ArgumentException => StatusCodes.Status400BadRequest,
+        BadHttpRequestException badRequest => badRequest.StatusCode,
+        ArgumentException => StatusCodes.Status400BadRequest,
         FileNotFoundException or KeyNotFoundException => StatusCodes.Status404NotFound,
         _ => StatusCodes.Status500InternalServerError
     };

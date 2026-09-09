@@ -16,6 +16,8 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     private readonly string wallDirectory;
     private readonly string holdsDirectory;
     private readonly IColliderJobStore colliderJobs;
+    private readonly ILogger<FileSystemAssetCatalogService> logger;
+    private readonly AssetDirectoryReader directories;
     private readonly FileExtensionContentTypeProvider contentTypes = new();
 
     /// <summary>
@@ -24,12 +26,16 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     public FileSystemAssetCatalogService(
         IOptions<AssetStorageOptions> options,
         IWebHostEnvironment environment,
-        IColliderJobStore colliderJobs)
+        IColliderJobStore colliderJobs,
+        ILogger<FileSystemAssetCatalogService> logger,
+        AssetDirectoryReader directories)
     {
         var rootPath = Path.GetFullPath(options.Value.RootPath, environment.ContentRootPath);
         wallDirectory = Path.Combine(rootPath, options.Value.MainWallDirectory);
         holdsDirectory = Path.Combine(rootPath, options.Value.HoldsDirectory);
         this.colliderJobs = colliderJobs;
+        this.logger = logger;
+        this.directories = directories;
     }
 
     /// <inheritdoc />
@@ -47,15 +53,13 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
             return [];
         }
 
-        return Directory.EnumerateDirectories(holdsDirectory)
-            .Where(path => HoldDirectoryName().IsMatch(Path.GetFileName(path)))
-            .Select(CreateDescriptor)
-            .Where(descriptor => descriptor is not null)
-            .OrderBy(descriptor => descriptor!.Number)
-            .ThenBy(descriptor => descriptor!.Manifest.Id, StringComparer.Ordinal)
-            .Select(descriptor => descriptor!.Manifest)
-            .ToArray();
+        return Discover().Select(descriptor => descriptor.Manifest).ToArray();
     }
+
+    /// <inheritdoc />
+    public IReadOnlyList<HoldStatus> GetHoldStatuses() => Discover()
+        .Select(descriptor => new HoldStatus(descriptor.Manifest.Id,
+            descriptor.Manifest.ColliderStatus, descriptor.Manifest.ColliderUrl)).ToArray();
 
     /// <inheritdoc />
     public IReadOnlyList<HoldModelAsset> GetHoldModels()
@@ -65,15 +69,31 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
             return [];
         }
 
-        return Directory.EnumerateDirectories(holdsDirectory)
-            .Where(path => HoldDirectoryName().IsMatch(Path.GetFileName(path)))
-            .Select(path => new { Id = Path.GetFileName(path), ModelPath = FindSingleFile(path, "*.glb") })
-            .Where(item => item.ModelPath is not null)
-            .OrderBy(item => int.Parse(HoldDirectoryName().Match(item.Id).Groups[1].Value, CultureInfo.InvariantCulture))
-            .ThenBy(item => item.Id, StringComparer.Ordinal)
-            .Select(item => new HoldModelAsset(item.Id, item.ModelPath!))
-            .ToArray();
+        return Discover().Select(descriptor => new HoldModelAsset(descriptor.Manifest.Id, descriptor.ModelPath)).ToArray();
     }
+
+    /// <summary>Isola i guasti di enumerazione e ordina i descrittori validi per numero e identificativo.</summary>
+    private IReadOnlyList<HoldDescriptor> Discover()
+    {
+        string[] paths;
+        try
+        {
+            paths = directories.GetDirectories(holdsDirectory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            LogDiscoveryFailure(exception);
+            return [];
+        }
+
+        return paths.Select(CreateDescriptor).OfType<HoldDescriptor>()
+            .OrderBy(descriptor => descriptor.Number)
+            .ThenBy(descriptor => descriptor.Manifest.Id, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>Registra il guasto di discovery con un identificativo correlabile senza interrompere le altre cartelle.</summary>
+    private void LogDiscoveryFailure(Exception exception) => logger.LogError(exception,
+        "Discovery asset non riuscita, errore {ErrorId}", Guid.NewGuid().ToString("N"));
 
     /// <inheritdoc />
     public AssetFile? GetHoldModel(string id)
@@ -125,15 +145,35 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     /// </summary>
     private HoldDescriptor? CreateDescriptor(string directory)
     {
+        try
+        {
+            return ReadDescriptor(directory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            LogDiscoveryFailure(exception);
+            return null;
+        }
+    }
+
+    /// <summary>Compone manifest e risorse opzionali dai nomi dei file e dallo stato del job collider.</summary>
+    private HoldDescriptor? ReadDescriptor(string directory)
+    {
         var id = Path.GetFileName(directory);
         var match = HoldDirectoryName().Match(id);
-        var modelPath = FindSingleFile(directory, "*.glb");
-        if (!match.Success || modelPath is null)
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
         {
             return null;
         }
 
-        var previewPath = FindSingleFile(directory, "PREV_*.*");
+        var files = directories.GetFiles(directory).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        var modelPath = files.FirstOrDefault(path => Path.GetExtension(path).Equals(".glb", StringComparison.OrdinalIgnoreCase));
+        if (modelPath is null)
+        {
+            return null;
+        }
+
+        var previewPath = files.FirstOrDefault(path => Path.GetFileName(path).StartsWith("PREV_", StringComparison.OrdinalIgnoreCase));
         var colliderPath = Path.Combine(directory, ColliderFileName);
         var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -145,7 +185,7 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
             excludedFiles.Add(Path.GetFileName(previewPath));
         }
 
-        var optionalFiles = Directory.EnumerateFiles(directory)
+        var optionalFiles = files
             .Select(path => Path.GetFileName(path)!)
             .Where(fileName => !excludedFiles.Contains(fileName))
             .Order(StringComparer.OrdinalIgnoreCase)
@@ -169,8 +209,9 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
             optionalFiles.Select(fileName => $"/api/holds/{encodedId}/assets/{Uri.EscapeDataString(fileName)}").ToArray());
 
         return new HoldDescriptor(
-            int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
+            number,
             directory,
+            modelPath,
             optionalFiles,
             manifest);
     }
@@ -189,7 +230,9 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     /// </summary>
     private string? ResolveHoldDirectory(string id)
     {
-        if (!HoldDirectoryName().IsMatch(id) || !Directory.Exists(holdsDirectory))
+        var match = HoldDirectoryName().Match(id);
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+            || !Directory.Exists(holdsDirectory))
         {
             return null;
         }
@@ -222,7 +265,7 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     /// <summary>
     /// Restituisce l'espressione regolare compilata per il naming delle prese.
     /// </summary>
-    [GeneratedRegex("^Hold([0-9]+)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\AHold([0-9]+)\z", RegexOptions.CultureInvariant)]
     private static partial Regex HoldDirectoryName();
 
     /// <summary>
@@ -231,6 +274,7 @@ public sealed partial class FileSystemAssetCatalogService : IAssetCatalogService
     private sealed record HoldDescriptor(
         int Number,
         string Directory,
+        string ModelPath,
         IReadOnlyList<string> OptionalFiles,
         HoldManifest Manifest);
 }

@@ -13,11 +13,13 @@ export type SceneActionStatus =
   | 'invalid-endpoint'
   | 'surface-limit';
 
+/** Coordinate in pixel nello spazio della viewport usato dall'interazione. */
 export interface ViewportPoint {
   readonly x: number;
   readonly y: number;
 }
 
+/** Ingombro proiettato della presa e indicazione della sua visibilita. */
 export interface ScreenRect {
   readonly left: number;
   readonly top: number;
@@ -26,6 +28,7 @@ export interface ScreenRect {
   readonly visible: boolean;
 }
 
+/** Esito comunicabile alla UI, separato dall'eventuale causa diagnostica. */
 export interface SceneActionResult {
   readonly status: SceneActionStatus;
   readonly message: string;
@@ -34,6 +37,7 @@ export interface SceneActionResult {
     | 'normal-limit' | 'no-change' | 'path-unresolved';
 }
 
+/** Footprint del bersaglio con deformazione prospettica e feedback di validita. */
 export interface TargetPreview {
   readonly center: ViewportPoint;
   readonly diameterPx: number;
@@ -43,6 +47,7 @@ export interface TargetPreview {
   readonly rotationRadians: number;
 }
 
+/** Confronta richiesta del puntatore e posa candidata dell'anteprima durante il drag. */
 export interface DragPreview {
   readonly kind: 'move' | 'rotate';
   readonly start: ViewportPoint;
@@ -51,6 +56,7 @@ export interface DragPreview {
   readonly angleDegrees: number | null;
 }
 
+/** Stato della presa selezionata necessario a posizionare i controlli senza accedere alla scena. */
 export interface SelectedHoldSnapshot {
   readonly id: string;
   readonly physicalState: HoldPhysicalState;
@@ -58,7 +64,10 @@ export interface SelectedHoldSnapshot {
   readonly contactScreenPoint: ViewportPoint | null;
 }
 
+/** Vista immutabile dell'interazione corrente consumata da UI e overlay. */
 export interface InteractionSnapshot {
+  /** Scena non piu interattiva dopo un fault o il rilascio delle risorse. */
+  readonly failed?: boolean;
   readonly selected: SelectedHoldSnapshot | null;
   readonly mode: InteractionMode;
   readonly target: TargetPreview | null;

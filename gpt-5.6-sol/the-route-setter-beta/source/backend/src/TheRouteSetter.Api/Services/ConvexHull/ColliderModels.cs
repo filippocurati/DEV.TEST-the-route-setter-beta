@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.ComponentModel.DataAnnotations;
 
 namespace TheRouteSetter.Api.Services.ConvexHull;
 
@@ -11,7 +12,7 @@ namespace TheRouteSetter.Api.Services.ConvexHull;
 public sealed record ColliderDocument(
     [property: JsonPropertyName("sourceHash")] string SourceHash,
     [property: JsonPropertyName("vertices")] double[] Vertices,
-    [property: JsonPropertyName("indices")] int[] Indices);
+    [property: JsonPropertyName("indices"), Required] int[] Indices);
 
 /// <summary>
 /// Contiene vertici e indici triangolari prodotti dal calcolo geometrico.

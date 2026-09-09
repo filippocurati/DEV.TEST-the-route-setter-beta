@@ -1,3 +1,5 @@
+import { AppError } from '../errors/AppError';
+
 /** Parametri fisici della sessione; il file pubblico usa millimetri per evitare ambiguita. */
 export interface PhysicsConfig {
   readonly wallPenetrationToleranceMm: number;
@@ -14,7 +16,7 @@ export function parsePhysicsConfig(value: unknown): PhysicsConfig {
     || typeof value.wallPenetrationToleranceMm !== 'number'
     || !Number.isFinite(value.wallPenetrationToleranceMm)
     || value.wallPenetrationToleranceMm < 1 || value.wallPenetrationToleranceMm > 10) {
-    throw new Error('Configurazione fisica non valida: la tolleranza parete deve essere un numero tra 1 e 10 mm.');
+    throw new AppError('Configurazione fisica non valida: la tolleranza parete deve essere un numero tra 1 e 10 mm.', { category: 'Configuration' });
   }
   return Object.freeze({ wallPenetrationToleranceMm: value.wallPenetrationToleranceMm });
 }
@@ -27,7 +29,7 @@ export async function loadPhysicsConfig(): Promise<PhysicsConfig> {
     if (!response.ok) throw new Error('HTTP');
     value = await response.json();
   } catch {
-    throw new Error('Impossibile leggere la configurazione fisica. Verificare il file physics-config.json e ricaricare la pagina.');
+    throw new AppError('Impossibile leggere la configurazione fisica. Verificare il file physics-config.json e ricaricare la pagina.', { category: 'Configuration' });
   }
   return parsePhysicsConfig(value);
 }

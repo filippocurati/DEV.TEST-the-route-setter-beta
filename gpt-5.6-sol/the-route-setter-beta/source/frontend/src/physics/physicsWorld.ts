@@ -46,6 +46,7 @@ export interface WallRayContact {
   readonly featureId: number;
 }
 
+/** Esito della verifica di una posa e tipo di ostacolo che eventualmente la impedisce. */
 export interface PoseValidation {
   readonly valid: boolean;
   readonly blocker: 'wall' | 'hold' | null;

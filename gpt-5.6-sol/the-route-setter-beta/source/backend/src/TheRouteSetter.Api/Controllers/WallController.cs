@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
+using TheRouteSetter.Api.Models;
 using TheRouteSetter.Api.Services.Assets;
 
 namespace TheRouteSetter.Api.Controllers;
@@ -28,6 +29,8 @@ public sealed class WallController : ControllerBase
     /// <response code="404">Nessun modello parete disponibile.</response>
     [HttpGet]
     [Produces("model/gltf-binary")]
+    [ProducesResponseType(StatusCodes.Status206PartialContent)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status416RangeNotSatisfiable)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult Get()

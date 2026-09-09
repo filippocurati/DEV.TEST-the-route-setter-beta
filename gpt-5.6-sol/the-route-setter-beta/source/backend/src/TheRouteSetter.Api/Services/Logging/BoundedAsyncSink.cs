@@ -12,13 +12,15 @@ public sealed class BoundedAsyncSink : ILogEventSink, IDisposable
     private readonly Serilog.ILogger target;
     private readonly Channel<LogEvent> events;
     private readonly Task pump;
+    private readonly Action? maintenance;
 
     /// <summary>
     /// Inizializza una coda bounded; gli eventi eccedenti vengono scartati senza bloccare il chiamante.
     /// </summary>
-    public BoundedAsyncSink(Serilog.ILogger target, int capacity)
+    public BoundedAsyncSink(Serilog.ILogger target, int capacity, Action? maintenance = null)
     {
         this.target = target;
+        this.maintenance = maintenance;
         events = Channel.CreateBounded<LogEvent>(new BoundedChannelOptions(Math.Max(1, capacity))
         {
             FullMode = BoundedChannelFullMode.DropWrite,
@@ -51,9 +53,23 @@ public sealed class BoundedAsyncSink : ILogEventSink, IDisposable
     /// </summary>
     private async Task ProcessAsync()
     {
-        await foreach (var logEvent in events.Reader.ReadAllAsync())
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        var tick = timer.WaitForNextTickAsync().AsTask();
+        var available = events.Reader.WaitToReadAsync().AsTask();
+        maintenance?.Invoke();
+        while (true)
         {
-            target.Write(logEvent);
+            await Task.WhenAny(available, tick);
+            maintenance?.Invoke();
+            if (tick.IsCompleted) tick = timer.WaitForNextTickAsync().AsTask();
+            if (!available.IsCompleted) continue;
+            if (!await available) break;
+            // A bounded batch prevents continuous producers from starving maintenance.
+            for (var count = 0; count < 256 && events.Reader.TryRead(out var logEvent); count++)
+            {
+                target.Write(logEvent);
+            }
+            available = events.Reader.WaitToReadAsync().AsTask();
         }
     }
 }

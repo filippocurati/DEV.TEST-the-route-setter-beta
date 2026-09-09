@@ -48,6 +48,9 @@ public interface IColliderJobStore
     /// </summary>
     ColliderProcessingStatus GetStatus(string holdId, bool colliderFileExists);
 
+    /// <summary>Chiude la discovery iniziale: gli ID non accodati non verranno elaborati nella sessione.</summary>
+    void CompleteInitialDiscovery();
+
     /// <summary>
     /// Aggiorna lo stato di una presa.
     /// </summary>

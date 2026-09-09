@@ -1,8 +1,12 @@
 # Guida Applicativa E Tecnica
 
+**TheRouteSetter v0.0.1: release CHIUSA per accettazione dell'utente, con limiti noti accettati.** Stato, evidenze e punti di attenzione sono raccolti nel solo [stato della versione](../sdd-specs/06-stato-versione-v0.0.1.md), non in questa guida operativa. La chiusura non equivale a certificazione universale.
+
+Il target ufficiale e solo Google Chrome Stable desktop con WebGL 2.0; la versione verificata e `152.0.7977.76`. Gli aggiornamenti Chrome successivi richiedono le normali verifiche di regressione. Chromium e Firefox pinned restano runtime di test, Edge e Firefox non sono browser supportati della baseline v0.0.1; gli strumenti opzionali restano disponibili.
+
 ## Scopo
 
-The Route Setter consente di comporre una tracciatura di arrampicata su una parete tridimensionale. Il browser visualizza la parete e il catalogo locale, crea le istanze delle prese, gestisce la fisica Rapier, il targeting, le trasformazioni e l'esportazione JPG. Il backend ASP.NET Core scopre e distribuisce gli asset, genera i collider Convex Hull mancanti e centralizza errori e log.
+TheRouteSetter consente di comporre una tracciatura di arrampicata su una parete tridimensionale. Il browser visualizza la parete e il catalogo locale, crea le istanze delle prese, gestisce la fisica Rapier, il targeting, le trasformazioni e l'esportazione JPG. Il backend ASP.NET Core scopre e distribuisce gli asset, genera i collider Convex Hull mancanti e gestisce logging server ed errori applicativi. Il frontend inoltra al server riepiloghi diagnostici sicuri tramite un reporter globale e applicativo con coda volatile limitata, senza logging di rete per frame.
 
 Non esistono account, autenticazione o persistenza delle tracciature. Lo stato della composizione vive esclusivamente nella sessione browser.
 
@@ -20,7 +24,7 @@ Dalla fase 9UX la UX normativa è:
 - nessun comando legacy avanti/indietro e nessuna shortcut globale di trasformazione;
 - `Escape` annulla la modalità, elimina la preview, deseleziona la presa e nasconde il popup.
 
-Il primo gruppo (`DEC-025`) riguarda tolleranza/diedri, continuita dei click, diagnostica locale e regressioni. `DEC-026`, approvata dall'utente, ne sostituisce soltanto la parte tolleranza con soglie separate e configurazione runtime della parete. Gli interventi su backend/catalogo e il completamento della gestione globale errori restano differiti; questa guida non ne attesta la chiusura.
+Il primo gruppo (`DEC-025`) riguarda tolleranza/diedri, continuita dei click, diagnostica locale e regressioni. `DEC-026`, approvata dall'utente, ne sostituisce soltanto la parte tolleranza con soglie separate e configurazione runtime della parete. Il consolidamento successivo implementa backend/catalogo, gestione errori e lifecycle. `DEC-028` approva i click arrestati al prefisso conservativo nella direzione richiesta, senza sliding automatico, e gli indici collider obbligatori; non modifica il drag endpoint-only.
 
 ## Architettura
 
@@ -74,11 +78,12 @@ flowchart LR
   B[Browser] -->|GET /api/system/health| SYS[SystemController]
   B -->|GET /api/wall| WC[WallController]
   B -->|GET /api/holds| HC[HoldsController]
+  B -->|GET /api/holds/status| HC
   B -->|GET /api/holds/id/model| HC
   B -->|GET /api/holds/id/preview| HC
   B -->|GET /api/holds/id/collider| HC
   B -->|GET /api/holds/id/assets/fileName| HC
-  B -->|POST /api/logs| LC[LogsController]
+  B -->|POST /api/logs: coda limitata| LC[LogsController]
   HC --> AS[IAssetCatalogService]
   WC --> AS
   LC --> LS[IFrontendLogService]
@@ -89,40 +94,63 @@ flowchart LR
 | `GET` | `/api/system/health` | Disponibilità del backend. |
 | `GET` | `/api/wall` | Modello GLB della parete con supporto range. |
 | `GET` | `/api/holds` | Manifest leggero delle prese, senza contenuto GLB. |
+| `GET` | `/api/holds/status` | Readiness `no-store`: solo `id`, `colliderStatus`, `colliderUrl`. |
 | `GET` | `/api/holds/{id}/model` | Modello GLB caricato on demand. |
 | `GET` | `/api/holds/{id}/preview` | Immagine catalogo opzionale. |
 | `GET` | `/api/holds/{id}/collider` | Documento JSON del Convex Hull pronto. |
 | `GET` | `/api/holds/{id}/assets/{fileName}` | Asset opzionale appartenente alla presa. |
-| `POST` | `/api/logs` | Evento diagnostico frontend sanitizzato e registrato lato server. |
+| `POST` | `/api/logs` | Eventi sanitizzati dal reporter frontend; ricevuta HTTP 202 correlata, accettazione best effort. |
 
-Swagger UI è esposta su `/swagger`; il documento OpenAPI è `/swagger/v1/swagger.json`. Le risposte di errore non espongono stack trace o percorsi interni e includono gli identificatori di correlazione previsti.
+Swagger UI e esposta su `/swagger`; il documento OpenAPI e `/swagger/v1/swagger.json`. Nella pipeline applicativa, eccezioni, binding/validazione MVC, risorse/route mancanti e status di errore condividono `ErrorResponse` con `errorId`, `requestId` e messaggio non tecnico. HTTP 416 conserva `Content-Range` e restituisce lo stesso JSON sicuro; i range validi restano HTTP 206. Risposte gia iniziate e rifiuti del trasporto/proxy precedenti alla pipeline non possono essere riscritti con questo contratto. Limiti dei payload, correlazione e schema sono nei [contratti backend](backend-contracts.md).
 
 ## Lifecycle Della Presa
 
+Stato fisico dell'istanza, distinto dalla presenza nel catalogo e dalla modalita UI:
+
 ```mermaid
 stateDiagram-v2
-  [*] --> Catalogo
-  Catalogo --> Detached: Utilizza / load on demand
-  Detached --> AttachTargeting: Aggancia
-  AttachTargeting --> Attached: click valido / commit
-  AttachTargeting --> Detached: target invalido
-  Attached --> Moving: Sposta
-  Attached --> Rotating: Ruota
-  Moving --> Attached: click o drag valido
-  Rotating --> Attached: click o drag valido
-  Moving --> Attached: endpoint invalido / rollback
-  Rotating --> Attached: endpoint invalido / rollback
+  [*] --> Detached: Utilizza / load on demand
+  Detached --> Attached: Aggancia / click valido
+  Detached --> Detached: target invalido / posa invariata
+  Attached --> Attached: movimento o rotazione / commit oppure rollback
   Attached --> Detached: Sgancia
-  Detached --> Catalogo: Rimuovi
-  Attached --> Catalogo: Rimuovi
-  AttachTargeting --> Deselezionata: Escape
-  Moving --> Deselezionata: Escape
-  Rotating --> Deselezionata: Escape
-  Deselezionata --> Detached: selezione hold detached
-  Deselezionata --> Attached: selezione hold attached
+  Detached --> [*]: Rimuovi / torna disponibile nel catalogo
+  Attached --> [*]: Rimuovi / torna disponibile nel catalogo
 ```
 
-Lo stato fisico è `detached` o `attached`; la modalità UI è `idle`, `attach-targeting`, `moving` o `rotating`. Una sola presa e una sola sessione drag possono essere attive. `pointercancel`, perdita della capture, blur, rimozione e cambio selezione eseguono cleanup senza commit.
+Modalita UI della presa selezionata:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> AttachTargeting: Aggancia / presa detached
+  AttachTargeting --> AttachTargeting: target invalido / nuovo tentativo
+  AttachTargeting --> Idle: click valido / attached e selezionata
+  Idle --> Moving: Sposta / presa attached
+  Idle --> Rotating: Ruota / presa attached
+  Moving --> Moving: click o drag / commit, rollback o no-change
+  Rotating --> Rotating: click o drag / commit, rollback o no-change
+  Moving --> Rotating: Ruota
+  Rotating --> Moving: Sposta
+  Moving --> Idle: Sgancia
+  Rotating --> Idle: Sgancia
+  AttachTargeting --> Idle: Escape / cleanup e deselezione
+  Moving --> Idle: Escape / cleanup e deselezione
+  Rotating --> Idle: Escape / cleanup e deselezione
+  Idle --> Idle: Escape / deselezione
+```
+
+Lo stato fisico e `detached` o `attached`; la modalita UI e `idle`, `attach-targeting`, `moving` o `rotating`. `idle` non implica deselezione: il commit di aggancio conserva selezione e popup, sopprimendo la successiva selezione involontaria del click DOM; `Escape` deseleziona senza sganciare. Dopo un commit o rollback di trasformazione si resta in `moving` o `rotating`.
+
+Il lifecycle mantiene una sola presa e una sola sessione drag attive, con cleanup senza commit su `pointercancel`, perdita della capture, blur, rimozione e cambio selezione. CON04 aggiunge regressioni deterministiche per le sequenze asincrone e gli eventi; la verifica finale cross-browser resta distinta dalla presenza di questi percorsi.
+
+| Percorso | Stato e limite dell'evidenza |
+|---|---|
+| `pointerup` con sessione attiva | Conclude la transazione, elimina shadow e ripristina l'abilitazione precedente di OrbitControls; non termina la modalita di trasformazione. |
+| `pointercancel` / `lostpointercapture` | Annulla handle e drag libero; il rilascio della capture dopo commit non annulla una nuova sessione. |
+| Blur / cambio selezione / rimozione / `Escape` | Annulla preview, frame e stato pointer; rilascia capture e ripristina controlli. |
+| Dettagli con caricamenti sovrapposti | Generazione della richiesta e cleanup idempotente scartano successi/errori obsoleti. |
+| Errore irreversibile del rendering/callback scena | Arresta i frame, annulla interazioni, disabilita controlli e rifiuta comandi successivi senza mutazioni invisibili. |
 
 ## Flusso UI
 
@@ -145,9 +173,11 @@ flowchart TD
   COMMIT --> ROTATE[Ruota]
   MOVE --> PREVIEW[Shadow drag]
   ROTATE --> PREVIEW
-  PREVIEW --> ENDPOINT{Rilascio valido?}
-  ENDPOINT -->|Si| COMMIT
-  ENDPOINT -->|No| ROLLBACK[Rollback totale]
+  PREVIEW --> ENDPOINT{Endpoint disponibile e variato?}
+  ENDPOINT -->|No| UNCHANGED[No-change o no-surface: posa invariata]
+  ENDPOINT -->|Si| CHECK{Validazione endpoint}
+  CHECK -->|Valido| TRANSFORM[Commit: resta moving o rotating]
+  CHECK -->|Invalido| ROLLBACK[Rollback: resta moving o rotating]
   SELECT --> EXPORT[Genera JPG]
   SELECT --> REMOVE[Rimuovi e torna al catalogo]
   TARGET --> ESC[Escape: annulla e deseleziona]
@@ -156,15 +186,23 @@ flowchart TD
 
 ### Catalogo E Dettagli
 
-Il manifest viene caricato una volta per sessione. Preview, modelli e collider sono caricati on demand. Il viewer `Dettagli` è condiviso tra catalogo e popup e rilascia renderer, controlli e risorse alla chiusura. I modelli con lo stesso URL condividono download, parsing, geometrie e texture tramite reference counting.
+Il manifest viene caricato una volta per sessione. Le preview sono richieste subito alla creazione delle card (`eager`), anche fuori viewport, e memorizzate nella cache di sessione; non sono lazy su visibilita o click. Un guasto di caricamento preview viene segnalato al reporter e mantiene il fallback della card. GLB e collider sono invece caricati on demand: il GLB quando si aprono i dettagli o si usa una presa, il collider quando la si inserisce in scena. I modelli con lo stesso URL condividono download, parsing, geometrie e texture tramite reference counting finche esistono riferimenti attivi.
+
+Solo finche esistono prese `Pending`/`Missing`, il catalogo richiede `/api/holds/status` serialmente: intervallo iniziale `1 s`, timeout `10 s`, backoff degli errori fino a `30 s`. Aggiorna readiness e pulsante `Utilizza` senza reload, refetch del manifest/preview o caricamento anticipato dei GLB; `Ready` e `Failed` sono terminali per il watcher. Il dispose interrompe richiesta e timer. La discovery backend isola cartelle problematiche e suffissi numerici fuori range; dopo la discovery iniziale un ID mai accodato e `Failed`, non un Pending senza fine. Non e un hot reload degli asset.
+
+Il viewer `Dettagli` e condiviso tra catalogo e popup. Una generazione identifica l'apertura corrente: chiusura/riapertura o aperture sovrapposte non accettano risultati obsoleti. Il cleanup viene predisposto prima dei caricamenti e rilascia observer, controlli, renderer, canvas, istanza e riferimento al modello anche dopo errori intermedi. Un caricamento completato dopo la chiusura rilascia la propria risorsa senza sostituire il viewer corrente.
 
 ### Targeting E Aggancio
 
 La shadow gialla segue il ray centrale e orienta l'asse locale `+Z` sulla normale della parete, conservando il twist. Il footprint della base non è disegnato, ma genera 37 campioni deterministici. Al click gli hit sono raggruppati per continuità e compatibilità delle normali; il gruppo dominante determina punto e normale. Una posa invalida non modifica la presa e rende temporaneamente rossa la shadow.
 
+Camera change e resize ricalcolano il target dall'ultima posizione del puntatore anche a mouse fermo. Durante targeting il sinistro e riservato all'aggancio; la camera mantiene i gesti consentiti senza avviare una trasformazione della presa. Durante drag la camera e congelata e il resize e rinviato, poi applicato alla chiusura della sessione. Popup e frecce usano i bounds proiettati della presa, non offset fissi indipendenti dalla geometria.
+
 ### Movimento E Rotazione
 
 Il click sulle frecce richiede `1 cm` o `1°`, arrestando il passo alla frazione ammessa dalle query. Solo i click di movimento restano entro `5°` dalla normale di aggancio e si arrestano su gap o discontinuita. Oltre la soglia pointer di `4 px`, il gesto diventa una transazione: la presa reale e il collider restano invariati, la shadow mostra il candidato e il rilascio valida solo l'endpoint, senza query collisioni durante pointermove. Il drag da freccia e vincolato all'asse; quello iniziato sulla presa usa entrambe le dimensioni dello schermo, con contact point sotto al puntatore senza offset iniziale. Il drag usa la prima superficie visibile dell'intero modello, puo cambiare pannello senza limite di `5°` e trasporta l'orientamento sulla nuova normale. Un endpoint invalido annulla tutto; senza hit la shadow e nascosta e l'endpoint non e committabile, fino a un nuovo hit.
+
+Gli aggiornamenti da frecce/handle e drag libero sulla presa sono raggruppati tramite RAF; al rilascio viene applicata l'ultima posizione del puntatore prima del commit. Al rilascio di una sessione valida si esegue esattamente una `validatePose` solo con endpoint disponibile e variato; `no-change` e `no-surface` terminano senza validazione fisica endpoint. I raycast geometrici per trovare la superficie non sono inclusi in questo conteggio. La verifica esaustiva delle query native resta un criterio di accettazione distinto dal contatore applicativo.
 
 ### Validazione Fisica E Limiti
 
@@ -172,7 +210,7 @@ Il click sulle frecce richiede `1 cm` o `1°`, arrestando il passo alla frazione
 
 Per i click, lo shape cast opera solo a rotazione fissa e da partenza separata, arrestando la traslazione prima del primo contatto, anche verso il pavimento: la tolleranza non autorizza lo sweep a proseguire fino alla profondita ammessa. Contatti iniziali e rotazione sono gestiti dalla suddivisione ricorsiva degli intervalli, confrontando il margine minimo `distance + tolerance` con il massimo moto dei punti del collider, dato da traslazione piu raggio per angolo di rotazione. Ogni chiamata usa budget `512` e bound minimo `2e-6 m`; gli intervalli incerti o irrisolti sono bloccati conservativamente, non accettati perche gli endpoint sono liberi. La regressione pavimento/pinna nello stesso collider con contatto iniziale passa, ma non elimina il limite nativo dei cast da contatto iniziale. Il drag resta editoriale endpoint-only e non usa questo controllo del percorso. Il surface-lock dei click resta a `5 gradi` e il gap massimo di riproiezione a `5 mm`, indipendenti dalla tolleranza parete.
 
-Limiti noti di Rapier `0.12.0`: la profondita per faccia vicino alle giunzioni interne dei triangoli puo essere sottostimata anche se l'intersezione e confermata; una presa completamente contenuta in un TriMesh chiuso senza intersezione superficiale non viene rilevata. Le regressioni e il bound del moto non sono una certificazione generale per geometrie arbitrarie degeneri o volumi solidi, e non attestano che tutti i difetti siano risolti. Il follow-up e aperto in `sdd-specs/05-open-decisions-guidate.md`, `DEC-025`; un eventuale upgrade Rapier richiede approvazione utente e verifiche dedicate.
+Limiti noti Rapier `0.12.0` accettati per v0.0.1, riproduzioni CON09 e valutazioni future sono centralizzati nello [stato della versione](../sdd-specs/06-stato-versione-v0.0.1.md). Questa sezione descrive l'algoritmo implementato, non garanzie fisiche universali.
 
 La tolleranza configurabile (`DEC-026`) non garantisce che ogni superficie sia agganciabile ne compensa necessariamente tutte le imperfezioni di modelli da foto/fotogrammetria. Una soglia maggiore ammette maggiore penetrazione parete, non corregge la mesh o la precisione delle query.
 
@@ -180,7 +218,7 @@ Se una query rileva una violazione accertata e un altro collider restituisce dat
 
 ### Export
 
-`Genera immagine` produce un JPG con lato lungo `2560 px`, rapporto della viewport e qualità `0.90`. Il render temporaneo conserva camera e sfondo, esclude DOM, evidenziazioni, shadow e indicatori e ripristina sempre lo stato nel `finally`. Il comando è disabilitato durante un drag.
+`Genera immagine` produce un JPG con lato lungo `2560 px`, rapporto della viewport e qualità `0.90`. Il render temporaneo clona camera e proiezione esatte, senza ricalcolare l'aspect dai pixel arrotondati, conserva lo sfondo, esclude DOM, evidenziazioni, shadow e indicatori e ripristina lo stato nel `finally`, anche su errore render/JPEG. Il comando e disabilitato durante un drag.
 
 ## Responsabilità Backend E Frontend
 
@@ -211,7 +249,7 @@ flowchart LR
   PREVIEW --> THREE
   PREVIEW --> RAPIER
   THREE --> IMAGE
-  UX --> LOG
+   UX -->|riepiloghi sicuri e limitati| LOG
   ERR --> UX
 ```
 
@@ -233,7 +271,7 @@ sequenceDiagram
     W->>W: riusa il documento
   end
   C->>A: GET collider
-  A-->>C: vertici, indici, sourceHash
+  A-->>C: vertici, indici obbligatori, sourceHash
   C->>C: crea collider cinematico
 ```
 
@@ -242,28 +280,35 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant U as Utente
-  participant O as HoldOverlay
+  participant O as Input handle o canvas
   participant S as WallScene
   participant P as Rapier
   U->>O: pointerdown
   U->>O: movimento oltre 4 px
   O->>S: begin drag
   S->>S: crea shadow runtime
-  loop al massimo una volta per frame
+  loop pointermove: ultimo candidato via RAF per handle e drag libero
     U->>O: pointermove
     O->>S: aggiorna candidato geometrico
     S->>S: aggiorna solo shadow
   end
   U->>O: pointerup
-  O->>S: commit endpoint
-  S->>P: una validatePose
-  alt valido
-    S->>P: aggiorna corpo cinematico
-  else invalido
-    S->>S: conserva snapshot iniziale
+  O->>S: aggiorna candidato finale e richiede commit
+  alt sessione valida, endpoint disponibile e variato
+    S->>P: esattamente una validatePose endpoint
+    alt posa valida
+      S->>P: aggiorna corpo cinematico una volta
+    else posa invalida
+      S->>S: conserva posa e stato iniziali
+    end
+  else no-change o no-surface
+    S->>S: posa invariata, zero validatePose endpoint
   end
-  S->>S: elimina shadow e ripristina camera
+  S->>S: elimina shadow, ripristina OrbitControls
+  Note over O,S: La modalita resta moving o rotating
 ```
+
+La sequenza descrive una sessione attiva conclusa normalmente, non un click incrementale ne la matrice completa delle cancellazioni. Nessuna `validatePose`, `contactShape` o shape-cast durante pointermove; restano i raycast geometrici. Una richiesta senza sessione valida e `not-available` e non esegue la validazione endpoint.
 
 ## Configurazione
 
@@ -280,8 +325,9 @@ Le variabili d'ambiente ASP.NET Core possono sovrascrivere i valori con la sinta
 
 Il frontend usa:
 
-- `E2E_FRONTEND_PORT` e `E2E_BACKEND_PORT` per la suite E2E;
-- `PERF_FRONTEND_PORT`, `PERF_BACKEND_PORT`, `PERF_HEADLESS`, `PERF_DURATION_MS` e `PERF_HOLD_COUNT` per il benchmark.
+- `E2E_FRONTEND_PORT`, `E2E_BACKEND_PORT`, `E2E_BACKEND_COMMAND`, `E2E_REUSE_SERVER` per la suite E2E;
+- `E2E_BROWSERS`: matrice opzionale separata da virgole, default `chromium`; valori `chromium,chrome,msedge,firefox`, senza skip silenzioso se il browser richiesto manca;
+- `PERF_FRONTEND_PORT`, `PERF_BACKEND_PORT`, `PERF_BACKEND_COMMAND`, `PERF_BROWSER`, `PERF_HEADLESS`, `PERF_DURATION_MS`, `PERF_HOLD_COUNT` e `PERF_SMOKE` per il benchmark. Lo smoke ridotto non certifica il profilo hardware; comandi e metodo split-phase in [test automatici](test-automatici.md).
 
 ### Tolleranza Parete Runtime
 
@@ -315,7 +361,7 @@ In produzione, il codice che introduce questa funzionalita richiede prima la nor
 
 Modificare soltanto `source/frontend/public/physics-config.json` non cambia un deploy esistente: occorre ricompilare/distribuire oppure copiare quel JSON nella posizione servita. Configurare server statico, reverse proxy e CDN/cache affinche rispettino `Cache-Control: no-store` per `physics-config.json`; il `no-store` della fetch browser non sostituisce la configurazione degli intermediari. In DevTools Network verificare che la risposta contenga il nuovo valore.
 
-Verifica finale confermata dall'utente: su una build di produzione in dist temporanea, il file reale servito e stato modificato `5 -> 3 -> 5` e ciascun valore e stato applicato al reload senza rebuild fra le modifiche. Non e soltanto una risposta simulata nei test. Risultati e limiti nel [report DEC-026](../phases-outcome/Wall_tolerance_configuration_done.md).
+Evidenza prodotta durante l'implementazione `DEC-026`: su una build di produzione in dist temporanea, il file reale servito e stato modificato `5 -> 3 -> 5` e ciascun valore e stato applicato al reload senza rebuild fra le modifiche. Non e soltanto una risposta simulata nei test e non e una verifica del deployment operativo. Anche gli esiti unitari `331/331` in `12` file ed E2E `43/43` sono evidenze dell'implementazione, non test prodotti o eseguiti dall'utente. La conferma dell'utente riguarda la risoluzione del bug funzionale originale. Provenienza corrente nel report di stato; il [report storico DEC-026](../phases-outcome/Wall_tolerance_configuration_done.md) resta invariato.
 
 ### Prove Consigliate
 
@@ -330,7 +376,9 @@ Confrontare gli stessi punti, click `+/-1 cm` e twist `+/-1 grado`, annotando il
 
 ## Avvio Live
 
-Prerequisiti: .NET SDK `8.0.424`, Node.js `22.18.0`, npm `10.9.3` e browser WebGL 2.0.
+Questa sezione descrive lo sviluppo locale con Vite e `dotnet run`, non un deployment di produzione. Per pubblicare l'applicazione usare la sezione Produzione seguente.
+
+Prerequisiti: .NET SDK `8.0.424`, Node.js `22.18.0`, npm `10.9.3` e Google Chrome Stable desktop con WebGL 2.0.
 
 Backend, dalla cartella `source`:
 
@@ -347,6 +395,61 @@ npm run dev -- --host 127.0.0.1
 ```
 
 Aprire `http://127.0.0.1:5173`. Il proxy Vite inoltra `/api` a `http://127.0.0.1:5080`.
+
+## Produzione
+
+Procedura minima di riferimento, non eseguita ne certificata in questo aggiornamento. Sostituire percorsi e dominio con quelli dell'ambiente; i controlli HTTP sotto sono verifiche da eseguire, non esiti di un deploy gia testato. La build frontend e statica: ne Vite dev/preview ne `dotnet run` sono il servizio di produzione.
+
+Pubblicare il backend dalla cartella `source`:
+
+```powershell
+dotnet restore .\TheRouteSetter.sln --locked-mode
+dotnet publish .\backend\src\TheRouteSetter.Api\TheRouteSetter.Api.csproj -c Release --no-restore -o .\publish\api
+```
+
+Preparare il frontend dalla cartella `source/frontend`:
+
+```powershell
+npm ci
+npm run build
+```
+
+Distribuire il contenuto di `source/publish/api` nella directory API e quello di `source/frontend/dist` nella directory del sito statico, incluso `physics-config.json`. Il publish indicato richiede il runtime ASP.NET Core 8 sul server. Distribuire separatamente `main-wall` e `holds`: non assumere che il publish includa gli asset esterni.
+
+Esempio Windows, dalla directory API pubblicata, con directory asset e log gia predisposte:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Production'
+$env:AssetStorage__RootPath = 'D:\RouteSetter\assets'
+$env:Logging__FilePath = 'D:\RouteSetter\logs\log-.json'
+dotnet .\TheRouteSetter.Api.dll --urls http://127.0.0.1:5080
+```
+
+`AssetStorage__RootPath` deve essere assoluto e contenere `main-wall` e `holds`. L'identita del servizio deve poter leggere gli asset e creare/sostituire i `collider.json` nelle cartelle delle prese, oltre a scrivere e rimuovere i file nella directory log per la retention. Non riusare il `RootPath` relativo di sviluppo. Configurare directory di lavoro, variabili e avvio/riavvio nel gestore di servizi della piattaforma; il comando sopra da solo non installa un servizio.
+
+Servire `dist` con un server statico e inoltrare `/api/` alla API sulla stessa origine, mantenendo il prefisso. Esempio minimo Nginx, con percorsi da adattare:
+
+```nginx
+server {
+    listen 80;
+    server_name routes.example.test;
+    root D:/RouteSetter/site;
+    index index.html;
+
+    location = /physics-config.json {
+        add_header Cache-Control "no-store" always;
+        try_files $uri =404;
+    }
+    location /api/ {
+        proxy_pass http://127.0.0.1:5080;
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+L'esempio non configura TLS: predisporre HTTPS e le regole di rete prima dell'esposizione pubblica. Nessuna autenticazione e aggiunta dall'applicazione; valutare le restrizioni di accesso al proxy. `/swagger` non e inoltrato dall'esempio: verificarlo sull'origine backend oppure pubblicarlo esplicitamente secondo la policy dell'ambiente. Controllare sul sito distribuito pagina iniziale, `/api/system/health`, `/api/holds`, `/api/wall` e `physics-config.json`; verificare download GLB/collider, supporto range e scrittura log con l'identita effettiva del servizio. L'API non serve automaticamente il frontend statico e il proxy Vite non esiste in produzione.
 
 ## Avvio Debug
 
@@ -378,7 +481,11 @@ Con il file iniziale, `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm` rest
 
 ## Errori E Logging
 
-Il middleware assegna un identificatore di correlazione alla richiesta e converte le eccezioni nel contratto HTTP previsto. Serilog scrive JSON in modo asincrono, con livello minimo configurabile e retention giornaliera. Il frontend mostra messaggi non tecnici e non conserva log persistenti nel browser. La copertura globale di tutte le categorie di errore e il relativo inoltro al backend restano da completare/verificare nel gruppo differito: `lastActionResult.reason` e `lastPoseDiagnostic` sono diagnostica locale, non sostituiscono tale gestione ne producono invii per frame.
+Il middleware di correlazione assegna un identificatore alla richiesta; la pipeline produce il contratto sicuro della sezione API quando puo ancora scrivere la risposta. Serilog scrive JSON tramite consumer asincrono con coda limitata, livelli .NET `Trace..None` e override per prefisso di categoria. Il logger di completamento HTTP usa l'istanza dell'host tramite DI. La retention usa l'eta `LastWriteTimeUtc` e il pattern configurato, all'avvio e al cambio giorno anche senza eventi tramite timer idle, non il semplice numero di file.
+
+`AppError` e gli helper HTTP separano messaggio pubblico, categoria e identificativi validati dai dettagli tecnici. `main.ts` collega i catch applicativi e gli eventi globali `error`/`unhandledrejection` a `ErrorReporter`; gli handler globali non sopprimono la diagnostica nativa del browser. Il reporter conserva al massimo `20` eventi e `100` chiavi di deduplica per `30 s`, con un invio alla volta, throttle `1 s`, timeout `5 s` e massimo `3` tentativi; il proprio trasporto non genera segnalazioni ricorsive. Nessun log persistente nel browser, payload grezzo o rete per frame. Anche i guasti preview caricata dal catalogo vengono segnalati; `lastActionResult.reason` e `lastPoseDiagnostic` restano invece diagnostica locale volatile.
+
+L'avvio fallisce in modo chiuso se configurazione, parete o inizializzazione non sono recuperabili. Dopo un guasto irreversibile di rendering/callback, la scena ferma i frame e rifiuta ulteriori comandi, aggiunte ed export: non prosegue a modificare una composizione non piu visibile. Gli errori locali recuperabili mantengono rollback e operazioni indipendenti. Questo comportamento non promette recupero universale da ogni eccezione. La sanitizzazione e ricorsiva e il contesto browser usa una allowlist; dati personali arbitrari non etichettati non sono riconoscibili con garanzia assoluta: inviare solo riepiloghi diagnostici.
 
 ## Risoluzione Problemi
 

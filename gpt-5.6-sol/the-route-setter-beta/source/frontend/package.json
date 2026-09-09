@@ -1,6 +1,6 @@
 {
   "name": "the-route-setter-frontend",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "packageManager": "npm@10.9.3",

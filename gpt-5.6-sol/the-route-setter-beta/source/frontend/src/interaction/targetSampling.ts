@@ -4,6 +4,7 @@ const MAX_NORMAL_ANGLE_RADIANS = Math.PI / 36;
 export const TARGET_MIN_DIAMETER_PX = 48;
 export const TARGET_MAX_DIAMETER_PX = 160;
 
+/** Posizione normalizzata di un campione e indici stabili nel relativo anello. */
 export interface TargetSample {
   readonly index: number;
   readonly ring: number;
@@ -13,6 +14,7 @@ export interface TargetSample {
   readonly angle: number;
 }
 
+/** Intersezione di un campione con la parete, con dati per raggruppamento e spareggio. */
 export interface SurfaceSampleHit {
   readonly sampleIndex: number;
   readonly point: Vector3;
@@ -23,6 +25,7 @@ export interface SurfaceSampleHit {
   readonly screenDistanceSquared: number;
 }
 
+/** Superficie scelta dal bersaglio con normale locale e criteri di priorita del gruppo. */
 export interface DominantSurface {
   readonly point: Vector3;
   readonly normal: Vector3;

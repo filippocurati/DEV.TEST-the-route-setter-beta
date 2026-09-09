@@ -22,7 +22,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { fetchHoldCollider, type HoldColliderDocument, type HoldManifest } from '../api/holdApi';
 import { generateGuideImage, type CameraSnapshot, type GuideImageResult } from '../export/guideImage';
-import { loadHoldModel, type HoldModelResource } from '../holds/holdResources';
+import { disposeObject3D, loadHoldModel, type HoldModelResource } from '../holds/holdResources';
 import { ROTATION_STEP_RADIANS, TRANSLATION_STEP_METERS } from '../input/holdCommands';
 import type {
   InteractionMode,
@@ -61,6 +61,8 @@ import {
 
 /** Riferimenti della scena esposti esclusivamente per diagnostica e test E2E. */
 export interface WallSceneDebug {
+  /** Indica il blocco definitivo dei comandi dopo un fault della scena. */
+  readonly failed?: boolean;
   readonly collisionTolerancesMm: { readonly wall: number; readonly holds: number };
   readonly lastPoseDiagnostic: PoseDiagnostic | null;
   readonly wallLoaded: boolean;
@@ -113,6 +115,7 @@ export interface WallSceneDebug {
   readonly lastActionResult: SceneActionResult | null;
   readonly dragCandidatePosition: readonly number[] | null;
   readonly targetNormal: readonly number[] | null;
+  readonly targetShadowPosition: readonly number[] | null;
   readonly poseValidationCount: number;
   readonly dragCandidateNormal: readonly number[] | null;
   readonly dragCandidateFeatureId: number | null;
@@ -121,6 +124,7 @@ export interface WallSceneDebug {
   readonly contactFeatureId: number | null;
 }
 
+/** Misure del rendering e delle validazioni raccolte durante una sessione di benchmark. */
 export interface PerformanceSnapshot {
   readonly active: boolean;
   readonly startedAt: number | null;
@@ -139,42 +143,75 @@ export interface PerformanceSnapshot {
   readonly webglRenderer: string;
 }
 
+/** Controlli diagnostici per delimitare una raccolta di misure riproducibile. */
 export interface PerformanceController {
-  start(): void;
+  /** Azzera le misure e avvia la raccolta, con animazione camera opzionale. */
+  start(options?: { animateCamera?: boolean }): void;
+  /** Seleziona una presa esistente per lo scenario misurato. */
   selectHold(id: string): boolean;
+  /** Ferma la raccolta e restituisce le misure finali. */
   stop(): PerformanceSnapshot;
+  /** Legge le misure correnti senza interrompere la raccolta. */
   snapshot(): PerformanceSnapshot;
 }
 
 /** Controlli pubblici della scena usati dal catalogo senza esporre Three.js o Rapier alla UI. */
 export interface WallSceneController {
+  /** Rilascia risorse, listener e callback della scena; chiamate ripetute sono innocue. */
+  dispose(): void;
+  /** Carica e inserisce una presa pronta, annullando le risorse parziali in caso di errore. */
   addHold(hold: HoldManifest): Promise<void>;
+  /** Rimuove la presa indicata e libera le risorse della sua istanza. */
   removeHold(id: string): boolean;
+  /** Verifica la presenza di un'istanza del modello nella scena. */
   hasHold(id: string): boolean;
+  /** Legge l'identificativo selezionato, oppure null in assenza di selezione. */
   selectedHoldId(): string | null;
+  /** Rimuove evidenziazione e selezione correnti. */
   clearSelection(): void;
+  /** Espone lo stato necessario alla UI senza fornire oggetti fisici o grafici. */
   interactionSnapshot(): InteractionSnapshot;
+  /** Registra un osservatore dello stato e restituisce la relativa disiscrizione. */
   onInteractionChange(listener: (snapshot: InteractionSnapshot) => void): () => void;
+  /** Entra nella scelta del bersaglio per la presa sganciata selezionata. */
   beginAttachTargeting(): SceneActionResult;
+  /** Accoda la posizione del bersaglio e restituisce l'anteprima corrente. */
   updateAttachTarget(point: ViewportPoint): TargetPreview | null;
+  /** Campiona il bersaglio e applica l'aggancio solo su una posa valida. */
   commitAttachTarget(point: ViewportPoint): SceneActionResult;
+  /** Cerca una posa libera davanti alla parete e ripristina l'orientamento iniziale. */
   detachSelected(): SceneActionResult;
+  /** Attiva la modalita di traslazione per una presa agganciata. */
   beginMoving(): SceneActionResult;
+  /** Applica un passo tangenziale limitato da superficie e collisioni lungo il percorso. */
   moveSelected(direction: MoveDirection): SceneActionResult;
+  /** Crea l'anteprima di traslazione libera o vincolata a un asse dello schermo. */
   beginMoveDrag(direction: MoveDirection | 'free', point: ViewportPoint, pointerId: number): SceneActionResult;
+  /** Proietta la richiesta sulla parete senza modificare la posa fisica. */
   updateMoveDrag(point: ViewportPoint, pointerId: number): void;
+  /** Conclude il drag applicando soltanto un endpoint fisicamente valido. */
   commitMoveDrag(pointerId: number): SceneActionResult;
+  /** Attiva la modalita di rotazione per una presa agganciata. */
   beginRotating(): SceneActionResult;
+  /** Applica passi angolari limitati dalle collisioni lungo la rotazione. */
   rotateSelected(direction: RotationDirection, steps?: number): SceneActionResult;
+  /** Crea l'anteprima di rotazione associata al puntatore indicato. */
   beginRotationDrag(point: ViewportPoint, pointerId: number): SceneActionResult;
+  /** Aggiorna l'angolo candidato quantizzato senza alterare il corpo fisico. */
   updateRotationDrag(point: ViewportPoint, pointerId: number): void;
+  /** Conclude il drag applicando soltanto un orientamento finale valido. */
   commitRotationDrag(pointerId: number): SceneActionResult;
+  /** Elimina l'anteprima e rilascia la cattura del puntatore senza commit. */
   cancelTransformDrag(): void;
+  /** Termina il gesto e riporta la scena alla modalita inattiva. */
   cancelInteraction(): void;
+  /** Abilita o sospende i controlli orbitali della camera. */
   setOrbitEnabled(enabled: boolean): void;
+  /** Esporta l'immagine guida ripristinando lo stato interattivo al termine. */
   generateGuideImage(): Promise<GuideImageResult>;
 }
 
+/** Risorse della presa istanziata e stato di contatto necessario alle trasformazioni. */
 interface HoldSceneInstance {
   readonly id: string;
   readonly model: HoldModelResource;
@@ -198,6 +235,7 @@ interface HoldSceneInstance {
   readonly baseFootprint: readonly Vector3[];
 }
 
+/** Mantiene posa iniziale, candidato e shadow separati fino alla validazione del rilascio. */
 interface TransformDragSession {
   readonly kind: 'move' | 'rotate';
   readonly pointerId: number;
@@ -226,18 +264,36 @@ interface TransformDragSession {
 }
 
 declare global {
+  /** Espone i soli agganci diagnostici opzionali della scena e del benchmark. */
   interface Window {
     __ROUTE_SETTER_SCENE__?: WallSceneDebug;
     __ROUTE_SETTER_PERFORMANCE__?: PerformanceController;
   }
 }
 
-/** Crea la scena, carica automaticamente la parete e avvia il rendering interattivo. */
+/**
+ * Crea la scena con bootstrap transazionale e rendering interattivo.
+ * Gli errori asincroni di caricamento restano rejection; onError riceve i fault dei callback scena.
+ */
 export async function createWallScene(
   container: HTMLElement,
   status: HTMLElement,
   physicsConfig: PhysicsConfig,
+  onError?: (error: unknown) => void,
 ): Promise<WallSceneController> {
+  let disposed = false;
+  let failed = false;
+  const releases: Array<() => void> = [];
+  /** Esegue tutti i rilasci anche quando una risorsa non puo essere liberata. */
+  function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+    for (const release of releases.reverse()) {
+      try { release(); } catch { /* Non interrompe il cleanup delle altre risorse. */ }
+    }
+    releases.length = 0;
+  }
+  try {
   const scene = new Scene();
   scene.background = new Color(0x101713);
   const previewGroup = new Group();
@@ -246,6 +302,7 @@ export async function createWallScene(
 
   const camera = new PerspectiveCamera(42, 1, 0.01, 100_000);
   const renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  releases.push(() => renderer.domElement.remove(), () => renderer.forceContextLoss(), () => renderer.dispose());
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -264,6 +321,7 @@ export async function createWallScene(
   let performanceFrame: number | null = null;
 
   const controls = new OrbitControls(camera, renderer.domElement);
+  releases.push(() => controls.dispose());
   controls.enableDamping = false;
   controls.screenSpacePanning = true;
 
@@ -276,6 +334,7 @@ export async function createWallScene(
   scene.add(fillLight);
 
   const wall = await loadWall();
+  releases.push(() => disposeObject3D(wall.object));
   scene.add(wall.object);
   const frontReference = findFrontReference(wall.object, wall.center, wall.bounds);
   const spawnCandidates = createSpawnCandidateOffsets({
@@ -286,7 +345,9 @@ export async function createWallScene(
   });
   status.textContent = 'Inizializzazione fisica...';
   const physics = await PhysicsWorld.create(wall.triMesh, physicsConfig);
+  releases.push(() => physics.dispose());
   const holdInstances = new Map<string, HoldSceneInstance>();
+  const pendingHolds = new Set<string>();
   const colliderDocuments = new Map<string, Promise<HoldColliderDocument>>();
   const interactionListeners = new Set<(snapshot: InteractionSnapshot) => void>();
   const raycaster = new Raycaster();
@@ -304,12 +365,96 @@ export async function createWallScene(
   let poseValidationCount = 0;
   let lastExportCamera: CameraSnapshot | null = null;
   let lastExportDimensions: readonly number[] | null = null;
+  let renderFrame: number | null = null;
+  let targetFrame: number | null = null;
+  let pendingTargetPoint: ViewportPoint | null = null;
+  let freeMoveFrame: number | null = null;
+  let pendingFreeMove: { point: ViewportPoint; pointerId: number } | null = null;
+  let resizePending = false;
+  let pointerDownPosition: ViewportPoint | null = null;
+  let suppressNextSelectionClick = false;
+  let freeMovePointer: { id: number; start: ViewportPoint; dragging: boolean } | null = null;
+  releases.push(() => {
+    interactionListeners.clear();
+    if (renderFrame !== null) cancelAnimationFrame(renderFrame);
+    if (performanceFrame !== null) cancelAnimationFrame(performanceFrame);
+    for (const release of [clearTarget, cancelFreeMoveFrame, cancelTransformDrag]) {
+      try { release(); } catch { /* Completa il rilascio anche con una preview danneggiata. */ }
+    }
+    for (const instance of holdInstances.values()) {
+      for (const release of [
+        instance.unbind,
+        () => setHighlighted(instance, false),
+        () => instance.object.removeFromParent(),
+        () => instance.model.dispose(),
+      ]) {
+        try { release(); } catch { /* Continua con le altre risorse della scena. */ }
+      }
+    }
+    holdInstances.clear();
+    selectedHoldId = null;
+    interactionMode = 'idle';
+    colliderDocuments.clear();
+    delete window.__ROUTE_SETTER_SCENE__;
+    delete window.__ROUTE_SETTER_PERFORMANCE__;
+  });
+
+  /** Contiene gli errori dei callback senza richiamare il reporter ricorsivamente. */
+  function guarded<T extends unknown[]>(callback: (...args: T) => void): (...args: T) => void {
+    return (...args) => {
+      if (disposed || failed) return;
+      try { callback(...args); }
+      catch (error) {
+        failed = true;
+        if (renderFrame !== null) cancelAnimationFrame(renderFrame);
+        if (performanceFrame !== null) cancelAnimationFrame(performanceFrame);
+        renderFrame = performanceFrame = null;
+        performanceActive = false;
+        performanceCameraPosition = null;
+        for (const cleanup of [clearTarget, cancelTransformDrag]) {
+          try { cleanup(); } catch { /* Il reporter riceve l'errore originale. */ }
+        }
+        interactionMode = 'idle';
+        controls.enabled = false;
+        try { updateDebugState(); } catch { /* La diagnostica non sostituisce l'errore originale. */ }
+        const snapshot = getInteractionSnapshot();
+        for (const listener of [...interactionListeners]) {
+          try { listener(snapshot); } catch { /* Un osservatore guasto non blocca gli altri. */ }
+        }
+        try { onError?.(error); } catch { /* Evita errori globali dal reporter. */ }
+      }
+    };
+  }
+
+  /** Blocca un comando pubblico conservandone firma ed esito senza mutare lo stato fermo. */
+  function activeCommand<Args extends unknown[], Result>(
+    command: (...args: Args) => Result,
+    unavailable: () => Result,
+  ): (...args: Args) => Result {
+    return (...args) => disposed || failed ? unavailable() : command(...args);
+  }
+
+  /** Restituisce un esito neutro senza aggiornare diagnostica o ultimo comando. */
+  function unavailableAction(): SceneActionResult {
+    return { status: 'not-available', message: 'La scena non e disponibile.' };
+  }
+
+  /** Registra eventi canvas con boundary e rimozione deterministica. */
+  function listen<K extends keyof HTMLElementEventMap>(
+    type: K, callback: (event: HTMLElementEventMap[K]) => void, capture = false,
+  ): void {
+    const listener = guarded(callback);
+    renderer.domElement.addEventListener(type, listener, capture);
+    releases.push(() => renderer.domElement.removeEventListener(type, listener, capture));
+  }
   frameWall(camera, controls, wall.bounds, wall.center, wall.size);
   status.textContent = 'Parete pronta';
   status.dataset.state = 'ready';
 
   const updateDebugState = (): void => {
+    if (disposed) return;
     window.__ROUTE_SETTER_SCENE__ = {
+      failed,
       wallLoaded: true,
       collisionTolerancesMm: { wall: physics.wallPenetrationToleranceMeters * 1000, holds: HOLD_PENETRATION_TOLERANCE_METERS * 1000 },
       lastPoseDiagnostic: physics.lastPoseDiagnostic,
@@ -373,6 +518,7 @@ export async function createWallScene(
       targetNormal: targetingShadow && targetPreview
         ? new Vector3(0, 0, 1).applyQuaternion(targetingShadow.quaternion).toArray()
         : null,
+      targetShadowPosition: targetingShadow?.visible ? targetingShadow.position.toArray() : null,
       poseValidationCount,
       dragCandidateNormal: dragSession?.candidateNormal.toArray() ?? null,
       dragCandidateFeatureId: dragSession?.candidateFeatureId ?? null,
@@ -391,8 +537,13 @@ export async function createWallScene(
     };
   };
   const getInteractionSnapshot = (): InteractionSnapshot => {
+    if (failed || disposed) return {
+      failed: true, selected: null, mode: 'idle', target: null,
+      exporting: false, lastActionResult, dragPreview: null,
+    };
     const selected = selectedHoldId ? holdInstances.get(selectedHoldId) : undefined;
     return {
+      failed: false,
       selected: selected ? {
         id: selected.id,
         physicalState: selected.physicalState,
@@ -417,25 +568,28 @@ export async function createWallScene(
     };
   };
   const notifyInteraction = (): void => {
+    if (disposed || failed) return;
     updateDebugState();
     const snapshot = getInteractionSnapshot();
     interactionListeners.forEach((listener) => listener(snapshot));
   };
   let renderPending = false;
   const render = (): void => {
+    if (disposed || failed) return;
     updateDebugState();
     if (renderPending) return;
     renderPending = true;
-    requestAnimationFrame(() => {
+    renderFrame = requestAnimationFrame(guarded(() => {
+      renderFrame = null;
+      renderPending = false;
       const renderStartedAt = performance.now();
       renderer.render(scene, camera);
       if (performanceActive) {
         renderTimestamps.push(renderStartedAt);
         renderDurations.push(performance.now() - renderStartedAt);
       }
-      renderPending = false;
       notifyInteraction();
-    });
+    }));
   };
   if (performanceEnabled) {
     const performanceSnapshot = (): PerformanceSnapshot => {
@@ -461,15 +615,20 @@ export async function createWallScene(
       };
     };
     window.__ROUTE_SETTER_PERFORMANCE__ = {
-      start: () => {
+      start: (options = {}) => {
+        if (failed || disposed) return;
+        if (performanceFrame !== null) cancelAnimationFrame(performanceFrame);
+        performanceFrame = null;
         renderTimestamps = [];
         renderDurations = [];
         endpointDurations = [];
         performanceStartedAt = performance.now();
         performanceStoppedAt = null;
-        performanceCameraPosition = camera.position.clone();
+        performanceCameraPosition = options.animateCamera === false ? null : camera.position.clone();
         performanceActive = true;
-        const benchmarkFrame = (now: number): void => {
+        // La modalita di sola telemetria registra render e commit senza muovere la camera.
+        if (options.animateCamera === false) return;
+        const benchmarkFrame = guarded((now: number): void => {
           if (!performanceActive || !performanceCameraPosition || performanceStartedAt === null) return;
           const offset = performanceCameraPosition.clone().sub(controls.target);
           offset.applyAxisAngle(new Vector3(0, 1, 0), Math.sin((now - performanceStartedAt) / 2_000) * 0.08);
@@ -480,16 +639,18 @@ export async function createWallScene(
           renderTimestamps.push(renderStartedAt);
           renderDurations.push(performance.now() - renderStartedAt);
           performanceFrame = requestAnimationFrame(benchmarkFrame);
-        };
+        });
         performanceFrame = requestAnimationFrame(benchmarkFrame);
       },
       selectHold: (id) => {
+        if (failed || disposed) return false;
         if (!holdInstances.has(id)) return false;
         setSelection(id);
         render();
         return true;
       },
       stop: () => {
+        if (failed || disposed) return performanceSnapshot();
         performanceActive = false;
         if (performanceFrame !== null) cancelAnimationFrame(performanceFrame);
         performanceFrame = null;
@@ -505,28 +666,35 @@ export async function createWallScene(
       snapshot: performanceSnapshot,
     };
   }
-  controls.addEventListener('change', render);
+  /** Ricalcola il target solo su variazioni camera, non sulle notifiche di rendering. */
+  const cameraChanged = guarded((): void => {
+    camera.updateMatrixWorld(true);
+    if (pendingTargetPoint) updateAttachTarget(pendingTargetPoint);
+    render();
+  });
+  controls.addEventListener('change', cameraChanged);
+  releases.push(() => controls.removeEventListener('change', cameraChanged));
   updateDebugState();
 
+  /** Applica l'ultimo resize soltanto quando non esiste una trasformazione in anteprima. */
   const resize = (): void => {
-    if (dragSession) return;
+    if (disposed || failed) return;
+    if (dragSession) { resizePending = true; return; }
+    resizePending = false;
     const width = Math.max(container.clientWidth, 1);
     const height = Math.max(container.clientHeight, 1);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    if (pendingTargetPoint) updateAttachTarget(pendingTargetPoint);
     render();
   };
-  const resizeObserver = new ResizeObserver(resize);
+  const resizeObserver = new ResizeObserver(guarded(resize));
+  releases.push(() => resizeObserver.disconnect());
   resizeObserver.observe(container);
   resize();
 
-  let targetFrame: number | null = null;
-  let pendingTargetPoint: ViewportPoint | null = null;
-  let pointerDownPosition: ViewportPoint | null = null;
-  let suppressNextSelectionClick = false;
-  let freeMovePointer: { id: number; start: ViewportPoint; dragging: boolean } | null = null;
-  renderer.domElement.addEventListener('pointermove', (event) => {
+  listen('pointermove', (event) => {
     if (interactionMode !== 'attach-targeting' || event.pointerType !== 'mouse') return;
     const bounds = renderer.domElement.getBoundingClientRect();
     const nextPoint = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
@@ -538,13 +706,14 @@ export async function createWallScene(
     }
     pendingTargetPoint = nextPoint;
     if (targetFrame !== null) return;
-    targetFrame = requestAnimationFrame(() => {
+    targetFrame = requestAnimationFrame(guarded(() => {
       targetFrame = null;
       if (pendingTargetPoint) updateAttachTarget(pendingTargetPoint);
-    });
+    }));
   });
 
-  renderer.domElement.addEventListener('pointerdown', (event) => {
+  listen('pointerdown', (event) => {
+    suppressNextSelectionClick = false;
     const bounds = renderer.domElement.getBoundingClientRect();
     pointerDownPosition = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     if (interactionMode === 'moving' && event.pointerType === 'mouse' && event.button === 0 && selectedHoldId) {
@@ -566,7 +735,7 @@ export async function createWallScene(
     event.stopImmediatePropagation();
   }, true);
 
-  renderer.domElement.addEventListener('pointermove', (event) => {
+  listen('pointermove', (event) => {
     if (!freeMovePointer || freeMovePointer.id !== event.pointerId) return;
     const bounds = renderer.domElement.getBoundingClientRect();
     const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
@@ -577,10 +746,18 @@ export async function createWallScene(
       freeMovePointer.dragging = true;
       beginMoveDrag('free', freeMovePointer.start, event.pointerId);
     }
-    if (freeMovePointer.dragging) updateMoveDrag(point, event.pointerId);
+    if (!freeMovePointer.dragging) return;
+    pendingFreeMove = { point, pointerId: event.pointerId };
+    if (freeMoveFrame !== null) return;
+    freeMoveFrame = requestAnimationFrame(guarded(() => {
+      freeMoveFrame = null;
+      const pending = pendingFreeMove;
+      pendingFreeMove = null;
+      if (pending) updateMoveDrag(pending.point, pending.pointerId);
+    }));
   }, true);
 
-  renderer.domElement.addEventListener('pointerup', (event) => {
+  listen('pointerup', (event) => {
     const bounds = renderer.domElement.getBoundingClientRect();
     const downPosition = pointerDownPosition;
     const wasDrag = downPosition !== null && Math.hypot(
@@ -592,6 +769,7 @@ export async function createWallScene(
     if (freeMovePointer?.id === event.pointerId) {
       const pointer = freeMovePointer;
       freeMovePointer = null;
+      cancelFreeMoveFrame();
       if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
       if (pointer.dragging) {
         updateMoveDrag({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.pointerId);
@@ -605,20 +783,19 @@ export async function createWallScene(
     event.preventDefault();
     event.stopPropagation();
     if (wasDrag) return;
-    commitAttachTarget({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+    const outcome = commitAttachTarget({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+    if (outcome.status === 'applied') suppressNextSelectionClick = true;
   }, true);
-  renderer.domElement.addEventListener('pointercancel', (event) => {
+  listen('pointercancel', (event) => {
     if (freeMovePointer?.id !== event.pointerId) return;
-    freeMovePointer = null;
     cancelTransformDrag();
   });
-  renderer.domElement.addEventListener('lostpointercapture', (event) => {
+  listen('lostpointercapture', (event) => {
     if (freeMovePointer?.id !== event.pointerId) return;
-    freeMovePointer = null;
     cancelTransformDrag();
   });
 
-  renderer.domElement.addEventListener('click', (event) => {
+  listen('click', (event) => {
     if (suppressNextSelectionClick) {
       suppressNextSelectionClick = false;
       return;
@@ -644,7 +821,7 @@ export async function createWallScene(
     if (id === selectedHoldId) {
       return;
     }
-    disposeTargetingShadow();
+    clearTarget();
     cancelTransformDrag();
     if (selectedHoldId) {
       const previous = holdInstances.get(selectedHoldId);
@@ -653,7 +830,7 @@ export async function createWallScene(
     selectedHoldId = id && holdInstances.has(id) ? id : null;
     if (selectedHoldId) {
       const selected = holdInstances.get(selectedHoldId);
-      if (selected) setHighlighted(selected, true);
+      if (selected && !exporting) setHighlighted(selected, true);
     }
     interactionMode = 'idle';
     targetPreview = null;
@@ -683,6 +860,7 @@ export async function createWallScene(
   function updateAttachTarget(point: ViewportPoint): TargetPreview | null {
     const instance = selectedInstance();
     if (!instance || instance.physicalState !== 'detached' || interactionMode !== 'attach-targeting') return null;
+    pendingTargetPoint = { ...point };
     const hit = raycastWallAt(point);
     if (hit) {
       const ellipse = targetEllipse(instance, hit.point, hit.normal);
@@ -750,12 +928,13 @@ export async function createWallScene(
     instance.contactFeatureId = dominant.featureId;
     interactionMode = 'idle';
     targetPreview = null;
-    disposeTargetingShadow();
+    clearTarget();
     physics.synchronizeRendering();
     render();
     return result('applied', 'Presa agganciata.');
   }
 
+  /** Segnala il bersaglio non valido con feedback temporaneo, senza spostare la presa. */
   function invalidateTarget(message: string, reason?: SceneActionResult['reason']): SceneActionResult {
     targetInvalidUntil = performance.now() + 500;
     if (targetResetTimer !== null) clearTimeout(targetResetTimer);
@@ -771,14 +950,14 @@ export async function createWallScene(
     const outcome = result('invalid-target', message, reason);
     if (targetingShadow) setShadowColor(targetingShadow, 0xff3b30);
     notifyInteraction();
-    targetResetTimer = setTimeout(() => {
+    targetResetTimer = setTimeout(guarded(() => {
       targetResetTimer = null;
       if (interactionMode === 'attach-targeting' && targetPreview) {
         targetPreview = { ...targetPreview, feedback: 'normal' };
         if (targetingShadow) setShadowColor(targetingShadow, 0xffd436);
         notifyInteraction();
       }
-    }, 500);
+    }), 500);
     return outcome;
   }
 
@@ -807,6 +986,7 @@ export async function createWallScene(
     return result('blocked', 'Nessuno spazio disponibile per sganciare la presa.');
   }
 
+  /** Avanza lungo la tangente e riproietta anche i passi parziali prima di applicarli. */
   function moveSelected(direction: MoveDirection): SceneActionResult {
     const instance = selectedInstance();
     if (!instance || instance.physicalState !== 'attached' || interactionMode !== 'moving'
@@ -875,6 +1055,7 @@ export async function createWallScene(
     return result('applied', 'Presa spostata.');
   }
 
+  /** Consuma passi angolari fermandosi alla prima collisione o incertezza del percorso. */
   function rotateSelected(direction: RotationDirection, steps = 1): SceneActionResult {
     const instance = selectedInstance();
     if (!instance || instance.physicalState !== 'attached' || interactionMode !== 'rotating') {
@@ -920,6 +1101,7 @@ export async function createWallScene(
     return result('applied', 'Presa ruotata.');
   }
 
+  /** Riserva un gesto di movimento valido e sospende l'orbita durante l'anteprima. */
   function beginMoveDrag(direction: MoveDirection | 'free', point: ViewportPoint, pointerId: number): SceneActionResult {
     const instance = selectedInstance();
     if (!instance || instance.physicalState !== 'attached' || interactionMode !== 'moving'
@@ -938,6 +1120,7 @@ export async function createWallScene(
     return result('previewing', 'Anteprima spostamento attiva.');
   }
 
+  /** Trasporta l'orientamento sulla normale colpita; nasconde la shadow se manca la superficie. */
   function updateMoveDrag(point: ViewportPoint, pointerId: number): void {
     const session = dragSession;
     const instance = selectedInstance();
@@ -975,6 +1158,7 @@ export async function createWallScene(
     render();
   }
 
+  /** Valida solo l'endpoint del drag e aggiorna il contatto dopo un commit riuscito. */
   function commitMoveDrag(pointerId: number): SceneActionResult {
     const startedAt = performance.now();
     const session = dragSession;
@@ -1013,6 +1197,7 @@ export async function createWallScene(
     return outcome;
   }
 
+  /** Inizializza una shadow di rotazione per la presa agganciata e blocca l'orbita. */
   function beginRotationDrag(point: ViewportPoint, pointerId: number): SceneActionResult {
     const instance = selectedInstance();
     if (!instance || instance.physicalState !== 'attached' || interactionMode !== 'rotating'
@@ -1026,6 +1211,7 @@ export async function createWallScene(
     return result('previewing', 'Anteprima rotazione attiva.');
   }
 
+  /** Accumula l'angolo del puntatore senza salti al cambio di quadrante e quantizza la shadow. */
   function updateRotationDrag(point: ViewportPoint, pointerId: number): void {
     const session = dragSession;
     if (!session || session.kind !== 'rotate' || session.pointerId !== pointerId) return;
@@ -1046,6 +1232,7 @@ export async function createWallScene(
     render();
   }
 
+  /** Applica l'orientamento finale solo se diverso e valido, poi libera la sessione di drag. */
   function commitRotationDrag(pointerId: number): SceneActionResult {
     const startedAt = performance.now();
     const session = dragSession;
@@ -1074,6 +1261,7 @@ export async function createWallScene(
     return outcome;
   }
 
+  /** Fotografa la posa iniziale e crea una shadow con candidati indipendenti dal corpo fisico. */
   function createDragSession(
     kind: 'move' | 'rotate',
     instance: HoldSceneInstance,
@@ -1120,6 +1308,7 @@ export async function createWallScene(
     };
   }
 
+  /** Crea una sola shadow gialla per visualizzare il possibile aggancio. */
   function ensureTargetingShadow(instance: HoldSceneInstance): void {
     if (targetingShadow) return;
     targetingShadow = createShadow(instance.object, 0xffd436);
@@ -1127,33 +1316,41 @@ export async function createWallScene(
     previewGroup.add(targetingShadow);
   }
 
+  /** Scollega e libera l'anteprima di aggancio, se presente. */
   function disposeTargetingShadow(): void {
     if (!targetingShadow) return;
-    disposeShadow(targetingShadow);
+    const shadow = targetingShadow;
     targetingShadow = null;
+    disposeShadow(shadow);
   }
 
+  /** Copia il candidato sulla sola shadow, lasciando invariata l'istanza reale. */
   function applyShadowPose(session: TransformDragSession): void {
     session.shadow.position.copy(session.candidatePosition);
     session.shadow.quaternion.copy(session.candidateRotation);
     session.shadow.updateMatrix();
   }
 
+  /** Libera la shadow, ripristina l'orbita precedente e applica il resize eventualmente rinviato. */
   function finishDragSession(): void {
     if (!dragSession) return;
-    const previousOrbitEnabled = dragSession.previousOrbitEnabled;
-    disposeShadow(dragSession.shadow);
+    const session = dragSession;
     dragSession = null;
-    controls.enabled = previousOrbitEnabled;
+    controls.enabled = session.previousOrbitEnabled;
+    disposeShadow(session.shadow);
+    if (resizePending) resize();
     notifyInteraction();
   }
 
+  /** Annulla frame e cattura pendenti, quindi chiude il drag senza applicare il candidato. */
   function cancelTransformDrag(): void {
+    cancelFreeMoveFrame();
     if (freeMovePointer) {
-      if (renderer.domElement.hasPointerCapture(freeMovePointer.id)) {
-        renderer.domElement.releasePointerCapture(freeMovePointer.id);
-      }
+      const pointer = freeMovePointer;
       freeMovePointer = null;
+      if (renderer.domElement.hasPointerCapture(pointer.id)) {
+        renderer.domElement.releasePointerCapture(pointer.id);
+      }
     }
     if (dragSession) {
       finishDragSession();
@@ -1162,6 +1359,26 @@ export async function createWallScene(
     }
   }
 
+  /** Elimina gli aggiornamenti liberi non ancora consumati dal frame. */
+  function cancelFreeMoveFrame(): void {
+    if (freeMoveFrame !== null) cancelAnimationFrame(freeMoveFrame);
+    freeMoveFrame = null;
+    pendingFreeMove = null;
+  }
+
+  /** Invalida puntatore, feedback e shadow quando termina il targeting. */
+  function clearTarget(): void {
+    if (targetFrame !== null) cancelAnimationFrame(targetFrame);
+    if (targetResetTimer !== null) clearTimeout(targetResetTimer);
+    targetFrame = null;
+    targetResetTimer = null;
+    pendingTargetPoint = null;
+    targetPreview = null;
+    targetInvalidUntil = 0;
+    disposeTargetingShadow();
+  }
+
+  /** Converte pixel della viewport in un raycast fisico con normale rivolta verso la camera. */
   function raycastWallAt(point: ViewportPoint): { point: Vector3; normal: Vector3; distance: number; featureId: number } | null {
     const bounds = renderer.domElement.getBoundingClientRect();
     raycaster.setFromCamera(new Vector2(
@@ -1176,6 +1393,7 @@ export async function createWallScene(
   }
 
 
+  /** Proietta il footprint orientato della presa e ne limita il diametro per il bersaglio UI. */
   function targetDiameterPx(instance: HoldSceneInstance, wallPoint: Vector3, normal: Vector3): number {
     const rotation = orientationFromNormal(normal, instance.twistRadians);
     const projected = instance.baseFootprint.map((local) => local.clone()
@@ -1190,6 +1408,7 @@ export async function createWallScene(
     ));
   }
 
+  /** Stima rapporto degli assi e inclinazione dell'ellisse proiettando due tangenti alla parete. */
   function targetEllipse(instance: HoldSceneInstance, wallPoint: Vector3, normal: Vector3): {
     ratio: number;
     rotation: number;
@@ -1231,6 +1450,7 @@ export async function createWallScene(
     path.blocker === 'wall' ? 'wall-collision' : 'hold-collision');
   }
 
+  /** Delega la verifica fisica contando le query endpoint per la diagnostica della scena. */
   function validatePose(
     instance: HoldSceneInstance,
     translation: RAPIER.Vector,
@@ -1241,6 +1461,7 @@ export async function createWallScene(
     return physics.validatePose(instance.physics, translation, rotation, outwardNormal);
   }
 
+  /** Condivide il download del collider e rimuove dalla cache le richieste fallite. */
   function loadCollider(url: string): Promise<HoldColliderDocument> {
     let pending = colliderDocuments.get(url);
     if (!pending) {
@@ -1253,19 +1474,29 @@ export async function createWallScene(
     return pending;
   }
 
-  return {
+  const controller: WallSceneController = {
+    dispose,
+    /** Inserisce la presa con rollback di modello, binding e corpo fisico. */
     addHold: async (hold) => {
-      if (holdInstances.has(hold.id)) {
+      if (disposed || failed) throw new Error('La scena non e disponibile.');
+      if (holdInstances.has(hold.id) || pendingHolds.has(hold.id)) {
         throw new Error('La presa e gia presente nella scena.');
       }
       if (!hold.colliderUrl || hold.colliderStatus !== 'Ready') {
         throw new Error('Il collider della presa non e ancora disponibile.');
       }
 
-      const model = await loadHoldModel(hold);
+      pendingHolds.add(hold.id);
+      let model: HoldModelResource | undefined;
       let stagedObject: Group | undefined;
+      let stagedPhysics: KinematicPhysicsObject | undefined;
+      let stagedUnbind: (() => void) | undefined;
+      const previousSelection = selectedHoldId;
       try {
+        model = await loadHoldModel(hold);
+        if (disposed || failed) throw new Error('La scena non e disponibile.');
         const colliderDocument = await loadCollider(hold.colliderUrl);
+        if (disposed || failed) throw new Error('La scena non e disponibile.');
         const baseFootprint = computeBaseFootprint(colliderDocument.vertices);
         const baseDiameterMeters = computeBaseDiameter(baseFootprint);
         const collider = RAPIER.ColliderDesc.convexMesh(
@@ -1286,8 +1517,10 @@ export async function createWallScene(
           centralSpawn,
           new Quaternion(),
         );
+        stagedPhysics = physicsObject;
         let insertionPosition: Vector3 | undefined;
         const spawnResult = await findFirstAvailableSpawnCooperatively(spawnCandidates, (candidateOffset) => {
+          if (disposed || failed) throw new Error('La scena non e disponibile.');
           const candidate = centralSpawn.clone().add(new Vector3(candidateOffset.x, candidateOffset.y, 0));
           physics.setKinematicTransform(physicsObject, candidate, physicsObject.body.rotation());
           if (!physics.hasIntersections(physicsObject)) {
@@ -1296,14 +1529,15 @@ export async function createWallScene(
           }
           return false;
         });
+        if (disposed || failed) throw new Error('La scena non e disponibile.');
         if (!insertionPosition || !spawnResult) {
-          physics.removeKinematicObject(physicsObject);
           throw new Error('Nessuna posizione iniziale libera disponibile.');
         }
         object.position.copy(insertionPosition);
         object.updateMatrix();
         scene.add(object);
         const unbind = physics.bindRenderingObject(physicsObject.body, object);
+        stagedUnbind = unbind;
         const intersectsAtSpawn = false;
         const pickPointWorld = findPickPointWorld(object, camera);
         const pickPointLocal = object.worldToLocal(pickPointWorld.clone());
@@ -1333,9 +1567,22 @@ export async function createWallScene(
         physics.step();
         render();
       } catch (error) {
-        stagedObject?.removeFromParent();
-        model.dispose();
+        const staged = holdInstances.get(hold.id);
+        holdInstances.delete(hold.id);
+        if (selectedHoldId === hold.id) selectedHoldId = previousSelection && holdInstances.has(previousSelection) ? previousSelection : null;
+        for (const release of [
+          () => staged && setHighlighted(staged, false),
+          () => stagedUnbind?.(),
+          () => !disposed && stagedPhysics && physics.removeKinematicObject(stagedPhysics),
+          () => stagedObject?.removeFromParent(),
+          () => model?.dispose(),
+          () => { const selected = selectedInstance(); if (selected && !exporting) setHighlighted(selected, true); },
+        ]) {
+          try { release(); } catch { /* Conserva l'errore originale e completa il rollback. */ }
+        }
         throw error;
+      } finally {
+        pendingHolds.delete(hold.id);
       }
     },
     removeHold: (id) => {
@@ -1349,6 +1596,7 @@ export async function createWallScene(
         setSelection(null);
       }
       instance.unbind();
+      setHighlighted(instance, false);
       physics.removeKinematicObject(instance.physics);
       instance.object.removeFromParent();
       instance.model.dispose();
@@ -1361,7 +1609,7 @@ export async function createWallScene(
     clearSelection: () => setSelection(null),
     interactionSnapshot: getInteractionSnapshot,
     onInteractionChange: (listener) => {
-      interactionListeners.add(listener);
+      if (!failed && !disposed) interactionListeners.add(listener);
       listener(getInteractionSnapshot());
       return () => interactionListeners.delete(listener);
     },
@@ -1369,8 +1617,7 @@ export async function createWallScene(
       const instance = selectedInstance();
       if (!instance || instance.physicalState !== 'detached') return result('not-available', 'Aggancio non disponibile.');
       interactionMode = 'attach-targeting';
-      targetPreview = null;
-      disposeTargetingShadow();
+      clearTarget();
       notifyInteraction();
       return result('applied', 'Seleziona un punto sulla parete.');
     },
@@ -1403,9 +1650,7 @@ export async function createWallScene(
     commitRotationDrag,
     cancelTransformDrag,
     cancelInteraction: () => {
-      if (targetResetTimer !== null) clearTimeout(targetResetTimer);
-      targetResetTimer = null;
-      disposeTargetingShadow();
+      clearTarget();
       const hadDrag = dragSession !== null;
       cancelTransformDrag();
       interactionMode = 'idle';
@@ -1420,14 +1665,16 @@ export async function createWallScene(
       updateDebugState();
     },
     generateGuideImage: async () => {
+      if (disposed || failed) throw new Error('La scena non e disponibile.');
+      if (exporting) throw new Error('Esportazione gia in corso.');
       if (dragSession) throw new Error('Termina il trascinamento prima di generare l’immagine.');
       const selected = selectedHoldId ? holdInstances.get(selectedHoldId) : undefined;
       if (selected) setHighlighted(selected, false);
       const previewVisible = previewGroup.visible;
       previewGroup.visible = false;
       exporting = true;
-      notifyInteraction();
       try {
+        notifyInteraction();
         const result = await generateGuideImage(
           scene,
           camera,
@@ -1441,12 +1688,41 @@ export async function createWallScene(
       } finally {
         exporting = false;
         previewGroup.visible = previewVisible;
-        if (selected) setHighlighted(selected, true);
+        const current = selectedInstance();
+        if (!disposed && current) setHighlighted(current, true);
         notifyInteraction();
         render();
       }
     },
   };
+  return {
+    ...controller,
+    addHold: activeCommand(controller.addHold, () => Promise.reject(new Error('La scena non e disponibile.'))),
+    removeHold: activeCommand(controller.removeHold, () => false),
+    clearSelection: activeCommand(controller.clearSelection, () => undefined),
+    beginAttachTargeting: activeCommand(controller.beginAttachTargeting, unavailableAction),
+    updateAttachTarget: activeCommand(controller.updateAttachTarget, () => null),
+    commitAttachTarget: activeCommand(controller.commitAttachTarget, unavailableAction),
+    detachSelected: activeCommand(controller.detachSelected, unavailableAction),
+    beginMoving: activeCommand(controller.beginMoving, unavailableAction),
+    moveSelected: activeCommand(controller.moveSelected, unavailableAction),
+    beginMoveDrag: activeCommand(controller.beginMoveDrag, unavailableAction),
+    updateMoveDrag: activeCommand(controller.updateMoveDrag, () => undefined),
+    commitMoveDrag: activeCommand(controller.commitMoveDrag, unavailableAction),
+    beginRotating: activeCommand(controller.beginRotating, unavailableAction),
+    rotateSelected: activeCommand(controller.rotateSelected, unavailableAction),
+    beginRotationDrag: activeCommand(controller.beginRotationDrag, unavailableAction),
+    updateRotationDrag: activeCommand(controller.updateRotationDrag, () => undefined),
+    commitRotationDrag: activeCommand(controller.commitRotationDrag, unavailableAction),
+    cancelTransformDrag: activeCommand(controller.cancelTransformDrag, () => undefined),
+    cancelInteraction: activeCommand(controller.cancelInteraction, () => undefined),
+    setOrbitEnabled: activeCommand(controller.setOrbitEnabled, () => undefined),
+    generateGuideImage: activeCommand(controller.generateGuideImage, () => Promise.reject(new Error('La scena non e disponibile.'))),
+  };
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }
 
 /** Conserva l'ordine deterministico della griglia cedendo periodicamente il main thread. */
@@ -1653,6 +1929,7 @@ function captureMaterials(root: Group): ReadonlyMap<Mesh, Material | Material[]>
 /** Evidenzia la presa clonando temporaneamente i materiali senza modificare il modello catalogo. */
 function setHighlighted(instance: HoldSceneInstance, highlighted: boolean): void {
   for (const [mesh, original] of instance.originalMaterials) {
+    if (highlighted && instance.highlightedMaterials.has(mesh)) continue;
     if (!highlighted) {
       const highlightedMaterial = instance.highlightedMaterials.get(mesh);
       const highlightedList = Array.isArray(highlightedMaterial) ? highlightedMaterial : [highlightedMaterial];

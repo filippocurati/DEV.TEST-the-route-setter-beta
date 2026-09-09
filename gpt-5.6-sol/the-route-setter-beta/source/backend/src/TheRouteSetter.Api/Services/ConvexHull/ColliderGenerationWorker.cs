@@ -37,6 +37,7 @@ public sealed class ColliderGenerationWorker : BackgroundService
             jobs.SetPending(model.Id, model.ModelPath);
         }
 
+        jobs.CompleteInitialDiscovery();
         return base.StartAsync(cancellationToken);
     }
 
@@ -61,7 +62,8 @@ public sealed class ColliderGenerationWorker : BackgroundService
             catch (Exception exception)
             {
                 jobs.SetStatus(job!.HoldId, ColliderProcessingStatus.Failed);
-                logger.LogError(exception, "Generazione collider non riuscita per {HoldId}", job.HoldId);
+                logger.LogError(exception, "Generazione collider non riuscita per {HoldId}, errore {ErrorId}",
+                    job.HoldId, Guid.NewGuid().ToString("N"));
             }
         }
     }

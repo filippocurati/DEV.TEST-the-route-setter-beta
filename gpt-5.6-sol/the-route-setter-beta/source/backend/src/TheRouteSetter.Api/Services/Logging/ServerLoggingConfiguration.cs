@@ -18,12 +18,16 @@ public static class ServerLoggingConfiguration
         string contentRootPath)
     {
         var minimumLevel = ParseLevel(configuration["Logging:LogLevel:Default"]);
+        var overrides = configuration.GetSection("Logging:LogLevel").GetChildren()
+            .Where(section => !section.Key.Equals("Default", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(section => section.Key.Length)
+            .Select(section => (Category: section.Key, Level: ParseLevel(section.Value))).ToArray();
         var configuredPath = configuration["Logging:FilePath"] ?? "Logs/log-.json";
         var filePath = Path.GetFullPath(configuredPath, contentRootPath);
         var retentionDays = Math.Max(1, configuration.GetValue("Logging:RetentionDays", 7));
         var queueCapacity = Math.Max(1, configuration.GetValue("Logging:QueueCapacity", 2048));
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-        DeleteExpiredFiles(Path.GetDirectoryName(filePath)!, retentionDays, DateTime.UtcNow);
+        var retention = new LogFileRetention(filePath, retentionDays);
 
         var formatter = new SafeJsonLogFormatter(new SensitiveDataSanitizer());
         var fileLogger = new LoggerConfiguration()
@@ -32,15 +36,28 @@ public static class ServerLoggingConfiguration
                 formatter,
                 filePath,
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: retentionDays,
+                retainedFileCountLimit: null,
                 shared: false)
             .CreateLogger();
 
         loggerConfiguration
-            .MinimumLevel.Is(minimumLevel)
-            .MinimumLevel.Override("Microsoft.AspNetCore", ParseLevel(configuration["Logging:LogLevel:Microsoft.AspNetCore"]))
+            .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
-            .WriteTo.Sink(new BoundedAsyncSink(fileLogger, queueCapacity));
+            .Filter.ByIncludingOnly(logEvent =>
+            {
+                var category = logEvent.Properties.TryGetValue("Category", out var explicitCategory) ? explicitCategory
+                    : logEvent.Properties.GetValueOrDefault("SourceContext");
+                var name = (category as ScalarValue)?.Value as string ?? "";
+                var threshold = minimumLevel;
+                foreach (var item in overrides)
+                {
+                    if (!name.StartsWith(item.Category, StringComparison.OrdinalIgnoreCase)) continue;
+                    threshold = item.Level;
+                    break;
+                }
+                return (int)logEvent.Level >= (int)threshold;
+            })
+            .WriteTo.Sink(new BoundedAsyncSink(fileLogger, queueCapacity, () => retention.SweepIfDue(DateTime.UtcNow)));
     }
 
     /// <summary>
@@ -48,30 +65,14 @@ public static class ServerLoggingConfiguration
     /// </summary>
     public static int DeleteExpiredFiles(string directory, int retentionDays, DateTime utcNow)
     {
-        if (!Directory.Exists(directory))
-        {
-            return 0;
-        }
-
-        var threshold = utcNow.Date.AddDays(-retentionDays);
-        var deleted = 0;
-        foreach (var path in Directory.EnumerateFiles(directory, "log-*.json"))
-        {
-            if (File.GetLastWriteTimeUtc(path) < threshold)
-            {
-                File.Delete(path);
-                deleted++;
-            }
-        }
-
-        return deleted;
+        return new LogFileRetention(Path.Combine(directory, "log-.json"), retentionDays).SweepIfDue(utcNow);
     }
 
     /// <summary>
     /// Converte il livello configurato nel corrispondente livello Serilog, con default Information.
     /// </summary>
-    private static LogEventLevel ParseLevel(string? value) =>
-        Enum.TryParse<LogEventLevel>(value, ignoreCase: true, out var level)
+    private static LogLevel ParseLevel(string? value) =>
+        Enum.TryParse<LogLevel>(value, ignoreCase: true, out var level) && Enum.IsDefined(level)
             ? level
-            : LogEventLevel.Information;
+            : LogLevel.Information;
 }

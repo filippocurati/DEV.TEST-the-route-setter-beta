@@ -1,4 +1,5 @@
-import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
+import { defineConfig, type ReporterDescription } from '@playwright/test';
+import { browserProjects } from './scripts/con07-tooling';
 
 const dotnetCommand = (
   globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }
@@ -23,12 +24,8 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${frontendPort}`,
     trace: 'on-first-retry',
   },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
+  // Optional matrix; an explicitly requested but unavailable browser fails rather than being skipped.
+  projects: browserProjects(environment?.E2E_BROWSERS),
   webServer: [
     {
       command: backendCommand,

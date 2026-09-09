@@ -21,6 +21,12 @@ public sealed record HoldManifest(
     ColliderAvailability ColliderStatus,
     IReadOnlyList<string> OptionalAssetUrls);
 
+/// <summary>Stato aggiornabile, separato dai metadati immutabili del catalogo.</summary>
+/// <param name="Id">Identificativo della presa nel catalogo corrente.</param>
+/// <param name="ColliderStatus">Stato volatile della verifica o generazione.</param>
+/// <param name="ColliderUrl">Risorsa scaricabile solo quando il collider e pronto.</param>
+public sealed record HoldStatus(string Id, ColliderAvailability ColliderStatus, string? ColliderUrl);
+
 /// <summary>
 /// Indica se il collider pre-calcolato di una presa puo essere scaricato.
 /// </summary>
@@ -70,12 +76,21 @@ public sealed record HoldModelAsset(string Id, string ModelPath);
 /// <param name="Message">Messaggio sintetico non sensibile.</param>
 /// <param name="Component">Componente frontend che ha prodotto l'evento.</param>
 /// <param name="Context">Contesto diagnostico limitato e facoltativo.</param>
+/// <param name="ErrorId">GUID di un errore gia segnalato, se disponibile.</param>
+/// <param name="RequestId">Identificativo della richiesta originale, se disponibile.</param>
 public sealed record FrontendLogRequest(
-    LogLevel Level,
+    [Required] LogLevel? Level,
     [Required, StringLength(80, MinimumLength = 1)] string Category,
     [Required, StringLength(2000, MinimumLength = 1)] string Message,
     [Required, StringLength(80, MinimumLength = 1)] string Component,
-    IReadOnlyDictionary<string, string>? Context = null);
+    IReadOnlyDictionary<string, string>? Context = null,
+    [StringLength(36)] string? ErrorId = null,
+    [StringLength(128), RegularExpression("^[A-Za-z0-9._:-]+$")] string? RequestId = null);
+
+/// <summary>Correlazione dell'evento accettato; ErrorId presente per Error e Critical.</summary>
+/// <param name="ErrorId">Identificativo dell'errore originale o assegnato in fase di acquisizione.</param>
+/// <param name="RequestId">Correlazione originale, oppure della richiesta che acquisisce il log.</param>
+public sealed record FrontendLogResponse(string? ErrorId, string RequestId);
 
 /// <summary>
 /// Contratto sicuro restituito al client quando il backend intercetta un errore.

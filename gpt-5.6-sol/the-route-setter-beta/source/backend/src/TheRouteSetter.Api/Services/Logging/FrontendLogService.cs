@@ -20,26 +20,41 @@ public sealed class FrontendLogService : IFrontendLogService
     }
 
     /// <inheritdoc />
-    public void Write(FrontendLogRequest request, string requestId)
+    public FrontendLogResponse Write(FrontendLogRequest request, string requestId)
     {
+        var correlation = new FrontendLogResponse(
+            request.Level is LogLevel.Error or LogLevel.Critical ? request.ErrorId ?? Guid.NewGuid().ToString("N") : null,
+            request.RequestId ?? requestId);
         var properties = new Dictionary<string, object?>
         {
             ["Category"] = sanitizer.Sanitize(request.Category),
             ["Component"] = sanitizer.Sanitize(request.Component),
-            ["RequestId"] = requestId
+            ["RequestId"] = correlation.RequestId,
+            ["ErrorId"] = correlation.ErrorId,
+            ["IngestionRequestId"] = requestId
         };
 
         if (request.Context is not null)
         {
             foreach (var item in request.Context.Take(20))
             {
-                properties[$"Context.{sanitizer.Sanitize(item.Key, 80)}"] = sanitizer.Sanitize(item.Value, 500);
+                // Il contesto browser sconosciuto non autorizza la persistenza di dati personali arbitrari.
+                var safeValue = SensitiveDataSanitizer.IsSensitiveKey(item.Key) || !AllowedContextKeys.Contains(item.Key)
+                    ? "[REDACTED]" : sanitizer.Sanitize(item.Value, 500);
+                properties[$"Context.{sanitizer.Sanitize(item.Key, 80)}"] = safeValue;
             }
         }
 
         using (logger.BeginScope(properties))
         {
-            logger.Log(request.Level, "Evento frontend: {FrontendMessage}", sanitizer.Sanitize(request.Message));
+            logger.Log(request.Level!.Value, "Evento frontend: {FrontendMessage}", sanitizer.Sanitize(request.Message, 2000));
         }
+        return correlation;
     }
+
+    private static readonly HashSet<string> AllowedContextKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "operation", "assetId", "holdId", "status", "statusCode", "errorType", "retryCount", "phase",
+        "resource", "errorClass", "event"
+    };
 }

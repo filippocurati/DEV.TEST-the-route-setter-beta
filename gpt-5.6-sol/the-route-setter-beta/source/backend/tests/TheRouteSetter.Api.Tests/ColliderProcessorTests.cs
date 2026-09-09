@@ -109,6 +109,22 @@ public sealed class ColliderProcessorTests : IDisposable
         Assert.NotEmpty(document.Indices);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("[0,1,99,0,1,2,0,1,2,0,1,2]")]
+    public async Task MissingOrInvalidMandatoryIndices_AreRegeneratedEvenWhenHashMatches(string? indices)
+    {
+        var hash = await ComputeExpectedHashAsync();
+        var indicesProperty = indices is null ? "" : $",\"indices\":{indices}";
+        await File.WriteAllTextAsync(Path.Combine(directory, "collider.json"),
+            $"{{\"sourceHash\":\"{hash}\",\"vertices\":[0,0,0,1,0,0,0,1,0,0,0,1]{indicesProperty}}}");
+        Assert.Equal(ColliderProcessingResult.Generated, await processor.ProcessAsync("Hold1", ModelPath, CancellationToken.None));
+        Assert.Equal(12, (await ReadDocumentAsync()).Indices.Length);
+        Assert.Equal(1, hullBuilder.CallCount);
+    }
+
     /// <summary>
     /// Elimina i file temporanei creati dalla suite.
     /// </summary>

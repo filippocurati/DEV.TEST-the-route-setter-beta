@@ -27,7 +27,9 @@ public sealed class AssetCatalogServiceTests : IDisposable
                 HoldsDirectory = "holds"
             }),
             new TestWebHostEnvironment { ContentRootPath = data.RootPath },
-            new TestColliderJobStore());
+            new TestColliderJobStore(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FileSystemAssetCatalogService>.Instance,
+            new AssetDirectoryReader());
     }
 
     /// <summary>

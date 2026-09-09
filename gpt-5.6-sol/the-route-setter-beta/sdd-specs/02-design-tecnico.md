@@ -1,9 +1,13 @@
 # Design tecnico
 ## Applicazione per tracciatura vie climbing indoor
 
-Questo documento descrive come realizzare i requisiti di `01-specifica-requisiti.md`.
+Questo documento descrive il design della baseline v0.0.1 e i contratti di `01-specifica-requisiti.md`.
+
+I requisiti correnti, entro costituzione e decisioni esplicite, prevalgono su implementazione e report. Lo sviluppo di **v0.0.1 e CHIUSO e ACCETTATO dall'utente con limiti noti** (`DEC-029`); il design non converte questa accettazione in garanzie universali o correzioni tecniche. [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md) e l'unica fonte dello stato di versione, rischi, eccezioni ed evidenze. Le attenzioni accettate non bloccano la chiusura; gli esiti originali di fase restano storici.
 
 ## 1. Architettura
+
+Target ufficiale v0.0.1: Chrome Stable desktop con WebGL 2.0, ultima versione testata Chrome 152. Nessuna promessa automatica per future Stable del vendor; Edge e Firefox sono esplorativi e non bloccano la release (`C12`, `REQ-ARC-007`, `DEC-029`).
 
 Browser:
 - three.js per rendering;
@@ -31,7 +35,9 @@ Backend ASP.NET Core Web API:
 - Logging backend: Serilog.
 - Versionamento dipendenze: pinning esatto + lockfile obbligatori.
 
-## 3. Struttura cartelle proposta
+## 3. Struttura logica delle cartelle
+
+Schema logico, non inventario dei percorsi fisici: i sorgenti applicativi risiedono in `source/backend` e `source/frontend`.
 
 ```text
 /backend
@@ -70,6 +76,7 @@ Backend ASP.NET Core Web API:
 Mantenere almeno questi endpoint:
 - `GET /api/wall`
 - `GET /api/holds`
+- `GET /api/holds/status` (readiness separata)
 - `GET /api/holds/{id}/model`
 - `GET /api/holds/{id}/collider`
 - `POST /api/logs`
@@ -77,6 +84,18 @@ Mantenere almeno questi endpoint:
 E consentito aggiungere endpoint ulteriori se necessari, senza alterare i vincoli dei requisiti.
 
 Manifest hold: deve includere almeno id, previewUrl, modelUrl, colliderUrl e stato disponibilita collider.
+
+### Cache e disponibilita progressiva
+
+`HoldsController.GetStatus` delega a `IAssetCatalogService.GetHoldStatuses` e restituisce HTTP `200` con `Cache-Control: no-store`: array di `HoldStatus` con soli `id`, `colliderStatus`, `colliderUrl`. Stati `Missing`, `Pending`, `Ready`, `Failed`; URL `/api/holds/{id}/collider` soltanto per `Ready`, altrimenti `null`. Nessun preview/model URL, asset opzionale, hash o geometria. La discovery rilegge nomi di file/cartelle e job store corrente, non il contenuto GLB. `AssetDirectoryReader` e il worker isolano i guasti delle singole cartelle/job e li correlano con ErrorId; suffissi Hold non rappresentabili come interi sono ignorati senza bloccare le altre prese.
+
+`ColliderGenerationWorker.StartAsync` accoda i modelli scoperti come `Pending`, quindi chiama `CompleteInitialDiscovery`. Da quel momento `ColliderJobStore.GetStatus` restituisce `Failed` per un ID mai accodato, anche se la directory torna leggibile o contiene un collider non verificato; prima conserva i fallback `Missing`/`Ready`. Gli stati espliciti noti prevalgono sempre. Il worker consuma il backlog iniziale e termina quando vuoto, senza hot reload o riaccodamento automatico di ID nuovi.
+
+`source/frontend/src/catalog/sessionCatalog.ts` conserva una sola promessa del manifest e una cache di object URL delle preview. I metadati originali non vengono mutati: una mappa readiness separata sovrappone soltanto stato/URL collider in `availableHolds`. `watchReadiness` usa `fetchHoldReadiness` di `api/holdApi.ts`, che valida array, ID univoci `Hold<number>`, stati e URL coerenti, tramite `api/http.ts` e fetch `no-store`.
+
+Il watcher parte dopo `1 s`, senza richieste concorrenti; programma il successivo controllo `1 s` dopo la conclusione del precedente. Interroga l'endpoint solo finche almeno una hold gia nel manifest e `Pending`/`Missing` e applica aggiornamenti solo a queste hold. `Ready`/`Failed` sono terminali per la sessione; nuove hold eventualmente presenti nella risposta non vengono aggiunte al manifest. Il callback `onChange` aggiorna il catalogo solo quando cambia readiness/URL, senza refetch dei metadati/preview e senza eager-load GLB. Su errore mantiene lo stato precedente, notifica il reporter e ritenta con backoff `2, 4, 8, 16, 30 s`, azzerato dopo fetch riuscita; timeout per richiesta `10 s`. `dispose` cancella timer, abortisce la richiesta e rilascia le preview; nessun aggiornamento tardivo dopo distruzione. Nessun legame con frame o mouse move. Il codice attuale ritenta anche errori di parsing del payload, non solo errori di rete.
+
+La preview usa `fetchBlob` preservando il MIME (incluso SVG), senza mutare i metadati memorizzati.
 
 ## 5. Convex Hull backend
 
@@ -88,9 +107,9 @@ Flusso:
 
 ```json
 {
-  "sourceHash": "sha256:...",
-  "vertices": [0.0, 0.0, 0.0],
-  "indices": [0, 1, 2]
+  "sourceHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "vertices": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+  "indices": [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]
 }
 ```
 
@@ -98,13 +117,21 @@ Flusso:
 6. generazione in background non bloccante;
 7. hold esposte come utilizzabili quando collider pronto.
 
+Esempio strutturale di tetraedro: l'hash effettivo deve corrispondere al GLB sorgente. `DEC-028` rende tutti e tre i campi obbligatori e non null in `REQ-HUL-003`. `sourceHash` contiene `sha256:` seguito da 64 cifre esadecimali; `vertices` contiene XYZ contigui finiti, almeno 12 numeri e cardinalita multipla di 3; `indices` contiene almeno 12 interi in triangoli, cardinalita multipla di 3, ciascuno in `[0, vertices.length / 3)`. Il contratto descrive l'hull generato, non una triangolazione da ricostruire nel client.
+
+`Services/ConvexHull/ColliderModels.cs` espone `ColliderDocument` con `Indices` richiesto anche in OpenAPI. `FileSystemColliderProcessor` valida geometria prima della scrittura atomica e prima del riuso insieme all'hash: indici assenti/nulli/vuoti/fuori intervallo invalidano il collider anche con hash coerente. Il backend legge/genera gli indici; il frontend `HoldColliderDocument`/`validateColliderDocument` in `api/holdApi.ts` li richiede e `wallScene.ts` li passa a `ColliderDesc.convexMesh`, senza generazione hull. Il frontend verifica anche finitezza dopo conversione float32 e limiti uint32; la validazione backend osservata verifica invece finitezza double e indici `int`. Questi controlli minimi non sono una prova generale di qualita topologica di dati arbitrari.
+
+Non sono necessari migrazione o supporto retrocompatibile per documenti senza indici; non aggiungere fallback frontend. La rigenerazione ordinaria di file invalidi resta distinta da una migrazione.
+
 ## 6. Fisica frontend
 
 - mondo Rapier con gravita zero;
 - parete: TriMesh statico client-side;
 - hold: collider Convex Hull da backend;
-- movimento cinematico: `KinematicCharacterController`, shape-cast e contact query Rapier secondo il tipo di trasformazione;
+- movimento cinematico richiesto: shape-cast e contact query native Rapier coordinate dal solver; `KinematicCharacterController` fondazione legacy/opzionale;
 - no autostep/snap-to-ground.
+
+`DEC-028` aggiorna esplicitamente `REQ-FIS-004`: i click devono conservare il prefisso valido nella direzione richiesta, entro i vincoli locali, senza move-and-slide automatico o estrazione delle componenti libere per aggirare gli ostacoli. Il percorso attivo usa `maximumValidPoseFraction` (§7.9). `PhysicsWorld.characterController` resta inizializzato nella foundation e disponibile ai metodi legacy, ma non e richiesto come solver dei click correnti; la sua configurazione slide non determina la semantica dell'interazione attiva. Restano query native Rapier, architettura client-side, assenza di impulsi/dinamica e separazione mesh/collider. I drag restano editoriali endpoint-only; la chiusura normativa non certifica i limiti fisici generali.
 
 ### Convenzione spaziale degli asset
 
@@ -222,7 +249,7 @@ La trasformazione detached-target e un teletrasporto editoriale: il percorso non
 
 Per gli endpoint `prediction` e la tolleranza parete, che e sempre almeno quella fra prese; per gli intervalli e `bound + wallPenetrationToleranceMeters`. Distanza, soglia e dati diagnostici del contatto governante devono restare associati: una parete a `-4 mm` con soglia `5 mm` non puo mascherare una hold a `-2 mm` con soglia `1 mm`. `lastPoseDiagnostic.toleranceMeters` descrive la soglia scelta; `penetrationMeters` non e una ricerca indipendente della massima profondita grezza. Le contraddizioni restano bloccanti indipendentemente dalle tolleranze.
 
-Limiti noti di Rapier `0.12.0`: la profondita per faccia vicino alle giunzioni interne dei triangoli puo essere sottostimata anche con conferma di intersezione; il contenimento completo dentro un TriMesh chiuso senza intersezione superficiale non viene rilevato. Queste query non costituiscono una certificazione generale per geometrie arbitrarie degeneri o volumi solidi (`DEC-025`). La configurazione (`DEC-026`) non garantisce tutte le superfici o la compensazione di tutte le imperfezioni fotografiche/fotogrammetriche.
+Eccezione di release `DEC-029`: v0.0.1 mantiene Rapier `0.12.0` con i limiti noti descritti in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md), non risolti dall'accettazione. `C17`/`C18` e `REQ-FIS-011` richiedono comunque i controlli sull'intero hull e l'applicazione delle soglie, senza garanzia universale su geometrie arbitrarie o volumi solidi. Tutti i triangoli sono candidabili, non tutte le pose sono valide; nessuna soluzione generale, upgrade del motore o modifica degli asset e implicita nella chiusura.
 
 #### Configurazione runtime delle tolleranze
 
@@ -236,7 +263,7 @@ Il file sorgente `source/frontend/public/physics-config.json` contiene inizialme
 
 `src/config/physicsConfig.ts` valida un oggetto con questa sola chiave e numero finito in `1..10`, estremi inclusi, senza arrotondare i decimali (esempio `7.5`). JSON stretto: valore senza virgolette, punto decimale, niente commenti o chiavi aggiuntive. La soglia hold non e configurabile. Il bootstrap in `main.ts` attende una sola `loadPhysicsConfig()` con fetch di `${import.meta.env.BASE_URL}physics-config.json` e `cache: 'no-store'`, quindi passa il valore immutabile a `createWallScene` e `PhysicsWorld`. Non e un import compilato ne una chiamata backend o per frame. I default disponibili per costruzioni dirette/test non sono un fallback del bootstrap browser.
 
-HTTP non riuscito, rete, parsing o validazione falliti impediscono la creazione della scena e mostrano un errore gestito nella pagina, senza dettagli grezzi e senza `pageerror` non gestiti. Non avviare con default silenzioso. Il perimetro e questo errore di configurazione, non una revisione generale del backend o della gestione globale errori.
+HTTP non riuscito, rete, parsing o validazione falliti impediscono la creazione della scena e mostrano un errore gestito nella pagina, senza dettagli grezzi e senza `pageerror` non gestiti. Non avviare con default silenzioso. La gestione globale errori e descritta in §10.
 
 In sviluppo Vite serve `public`: modificare il file e ricaricare applica il valore senza compilazione o riavvio backend/frontend. Vite puo ricaricare automaticamente alla modifica: esportare il JPG prima di editare; reload perde la sessione e JPG non conserva lo stato editabile. Per produzione occorre prima installare/buildare/distribuire il codice della funzionalita; poi il file effettivamente servito e `dist/physics-config.json` nel deploy. Su server statico modificarlo e ricaricare non richiede rebuild o riavvio. Modificare solo `public` richiede rebuild o copia nel deploy; il build successivo sovrascrive `dist`, percio il valore permanente va conservato nel sorgente. Configurare server/proxy/cache per `Cache-Control: no-store` su questo URL. Procedura operativa in `docs/applicazione.md`.
 
@@ -311,7 +338,7 @@ Durante pointermove:
 7. aggiornare clone 3D e linea/freccia gialla;
 8. non eseguire `validatePose`, `contactShape`, shape-cast Convex Hull o mutazioni Rapier.
 
-Al pointerup viene validata esclusivamente `candidatePose`. Non viene verificato il percorso e non viene cercato un prefisso valido. Endpoint valido: un solo commit atomico di corpo, mesh, contact point, feature, normale e twist ricalcolato rispetto alla nuova normale. Endpoint invalido: rollback totale implicito, perche la posa reale non e mai stata modificata.
+Al pointerup viene eseguita esattamente una query applicativa `validatePose` su `candidatePose` soltanto se il candidato e cambiato ed e disponibile. No-change, no-hit, sessione non disponibile e annullamento non eseguono query endpoint ne commit. Le query native interne contro piu collider non sono ulteriori validazioni applicative. Non viene verificato il percorso e non viene cercato un prefisso valido. Endpoint valido: un solo commit atomico di corpo, mesh, contact point, feature, normale e twist ricalcolato rispetto alla nuova normale. Endpoint invalido: rollback totale implicito, perche la posa reale non e mai stata modificata.
 
 ### 7.7 Drag transazionale rotazione
 
@@ -321,9 +348,11 @@ Poiche nelle coordinate CSS l'asse Y cresce verso il basso, il segno del delta v
 
 Durante pointermove vengono aggiornati soltanto shadow e arco/linea gialla; non avvengono raycast o collision query. La shadow usa `orientationFromNormal(currentNormal, candidateTwist)`.
 
-Al pointerup viene validata esclusivamente la posa endpoint. Endpoint valido: commit atomico della rotazione e del twist. Endpoint invalido: rollback totale. Non vengono controllati angoli intermedi.
+Al pointerup viene eseguita esattamente una query applicativa `validatePose` soltanto per un candidato cambiato e disponibile. No-change dopo quantizzazione, sessione non disponibile e annullamento non eseguono query endpoint ne commit. Endpoint valido: commit atomico della rotazione e del twist. Endpoint invalido: rollback totale. Non vengono controllati angoli intermedi.
 
 ### 7.8 Shadow 3D runtime
+
+E un elemento visual-only, non un oggetto fisico aggiuntivo: `C6` impone mesh/collider separati a parete e istanze reali, non un collider per la preview.
 
 La shadow viene creata a runtime clonando la gerarchia grafica dell'istanza selezionata:
 
@@ -339,7 +368,7 @@ La shadow mostra sempre il target richiesto geometricamente ammissibile e non in
 
 ### 7.9 Rotazione e click incrementali
 
-I click incrementali di movimento e rotazione mantengono la semantica precedente: validazione continua e arresto all'ultima posa valida. I drag hanno invece semantica endpoint-only e rollback totale. Lo sgancio editoriale verifica separatamente ogni posa finale candidata.
+I click incrementali di movimento e rotazione mantengono la validazione continua e l'arresto al prefisso conservativo valido, ora prescritti da `REQ-FIS-004`/`DEC-028`: nessuno scorrimento automatico delle componenti libere o deviazione per aggirare un ostacolo. I drag hanno invece semantica endpoint-only e rollback totale. Lo sgancio editoriale verifica separatamente ogni posa finale candidata.
 
 `maximumValidPoseFraction` usa lo shape cast nativo solo per traslazioni a rotazione fissa (differenza angolare `< 1e-8`), su candidati AABB centrati a meta percorso con semiestensione `raggio + distanzaTraslazione / 2 + epsilon`. Per ogni ostacolo inizialmente separato, arresto al primo contatto sottraendo alla frazione TOI `2e-6 / travel`: anche verso il pavimento ci si ferma prima di toccarlo, senza avanzare fino alla penetrazione tollerata. I contatti gia presenti sono gestiti dagli intervalli: lo shape cast nativo non viene usato per risolvere questa condizione. Per includere anche la rotazione, il percorso viene suddiviso ricorsivamente da sinistra a destra, interpolando posizione e quaternion. Posto `travel = distanzaTraslazione + raggio * angolo`, per l'intervallo `[a,b]` il massimo moto di ogni punto rispetto alla posa centrale e limitato da `bound = travel * (b-a) / 2`. L'intervallo e accettato solo se non incerto e `min_i(distance_i + tolerance_i) >= bound + 2e-6`, con la soglia propria di ciascun contatto, come per gli endpoint. Non usare `min_i(distance_i)` seguito dall'aggiunta di un'unica tolleranza.
 
@@ -450,11 +479,41 @@ La UX 9UX e desktop mouse. Touch targeting e gesture gizmo non sono implementati
 
 ## 10. Error handling e logging
 
-Il completamento/revisione della gestione globale errori e gli interventi su backend/catalogo restano differiti rispetto al primo gruppo fisica/diagnostica (`DEC-025`). Le prescrizioni seguenti restano requisiti, non attestazioni di completamento del gruppo.
+I contratti seguenti restano richiesti; le limitazioni di copertura, logging e diagnostica sono eccezioni di release accettate in `DEC-029`, descritte in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md). La presenza dei componenti non e garanzia universale di intercettazione, recupero o persistenza.
 
-- middleware backend centralizzato con ErrorId;
-- frontend intercetta categorie minime richieste e notifica backend quando possibile;
-- Serilog JSON, livello minimo da `appsettings.json` (default `Information`), rotazione giornaliera, retention 7 giorni, sanitizzazione.
+### 10.1 Errori frontend e boundary
+
+`errors/AppError.ts` contiene `AppError`, `toAppError` e validazione della correlazione. Solo un `AppError` creato dal codice applicativo conserva il messaggio pubblico; gli errori sconosciuti non vengono letti tramite `message`, `stack`, `cause` o proprieta custom. Messaggio e contesto sono limitati/sanitizzati; il contesto frontend ammette soltanto `operation`, `resource`, `status`, `errorClass`, `event`, inclusi nell'allowlist backend descritta sotto.
+
+Il modulo HTTP e `source/frontend/src/api/http.ts`. `fetchJson`, `fetchBytes` e `fetchBlob` normalizzano rete, HTTP e lettura della risposta; una risposta remota anche formalmente JSON non rende affidabile il suo `message`. La UI usa il messaggio locale e conserva soltanto `errorId`/`requestId` validati, con fallback dell'ID richiesta dall'header. Gli schemi applicativi richiedono validazione del chiamante: gli helper generici non certificano qualsiasi DTO.
+
+`main.ts` installa `ErrorReporter` e collega catch di bootstrap, catalogo, caricamento hold/dettagli ed export. `wallScene.ts` usa `guarded` per callback canvas, render, camera e resize: su guasto interrompe il flusso compromesso, tenta cleanup e notifica in sicurezza, non promette recupero completo della scena. Listener globali `error` (capture) e `unhandledrejection` coprono errori sfuggiti ai catch senza `preventDefault`; errori sincroni/asincroni della callback di notifica sono contenuti per evitare ricorsione. `REQ-ERR-004` continua a richiedere categorie JS, REST/HTTP, model load/parsing, Three.js, Rapier, export e UI: la loro presenza nel tipo `ErrorCategory` non prova copertura o classificazione esaustiva, e alcuni percorsi restano `Unknown`.
+
+### 10.2 Reporter bounded
+
+`ERROR_REPORTER_DEFAULTS`: coda `20` eventi (incluso quello in invio), deduplica `100` chiavi con scadenza `30 s`, throttle `1 s`, massimo `3` tentativi totali, retry base `1 s`, tetto `8 s`, timeout `5 s`. La chiave e il DTO serializzato, inclusa la correlazione; chiavi scadute rimosse quando arriva una segnalazione e, a capacita, rimossa la piu vecchia. Overflow scarta il nuovo evento senza bloccare la UI. Le opzioni possono ridurre questi limiti, non ampliarli.
+
+Una sola POST `/api/logs` per volta, senza usare gli helper HTTP applicativi: nessun fallimento del trasporto viene riportato ricorsivamente. Retry su rete/timeout, `408`, `429`, `5xx`; altri rifiuti terminano l'evento. Backoff esponenziale limitato a `8 s` (con i default tre tentativi, le due attese di retry sono `1 s` e `2 s`), mai inferiore al throttle. Dopo esaurimento tentativi si scarta e si procede; `dispose` rimuove listener, cancella timer, abortisce la richiesta e svuota coda/cache. Ricevuta `202` non sostituisce gli ID originali nel frontend. Coda volatile senza storage, nessuna garanzia di consegna o invio per frame; blocchi fisici attesi restano feedback locali.
+
+### 10.3 API sicure e ricevuta log
+
+`Middleware/ApiErrors.cs` crea una sola correlazione per richiesta fallita e registra lo stesso ErrorId con RequestId, categoria e componente. `SafeErrorResultFilter`, status-code pages in `Program.cs` ed `ExceptionHandlingMiddleware` normalizzano binding/validazione MVC, risultati falliti, route/risorse mancanti, metodi/media type non supportati, richieste troppo grandi ed eccezioni propagate. JSON `{ errorId, requestId, message }`, status HTTP separato e `X-Request-Id`; `SafeErrorOperationFilter` documenta lo schema in OpenAPI. Le risposte gia iniziate vengono interrotte dopo logging, non riscritte; cancellazione client non tradotta in `500`; proxy/trasporto prima della pipeline restano fuori da questa garanzia applicativa.
+
+HTTP `416` viene normalizzato dopo il file result e prima che la risposta inizi: eliminati tipo/lunghezza asset e Content-Disposition, preservato `Content-Range: bytes */<lunghezza>`, scritto ErrorResponse con lo stesso ErrorId registrato. HTTP `206` resta binario. `UseSerilogRequestLogging` riceve il logger Serilog dell'host via DI, senza dipendere dal logger statico; correlazione e log persistiti sono coperti dai test di contratto.
+
+`POST /api/logs` accetta `FrontendLogRequest`: `level`, `category`, `component`, `message` obbligatori. Livelli `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`; `None` e valori non definiti rifiutati. Categoria/componente `1..80` caratteri, messaggio `1..2000`; opzionali ErrorId GUID (formati N/D verificati), RequestId `1..128` caratteri ASCII alfanumerici o `._:-`, contesto stringa/stringa fino a `20` voci, chiavi <=`80`, valori <=`500`, niente valori JSON annidati. Body massimo `32768` byte: controllo Content-Length prima del binding e limite MVC per Kestrel.
+
+`FrontendLogService.Write` restituisce HTTP `202` con esattamente `{ errorId: string|null, requestId: string }`: Error/Critical preservano l'ID fornito o ne generano uno; gli altri livelli restituiscono `null`. RequestId e quello originale fornito oppure quello di ingestione; `X-Request-Id` e proprieta log `IngestionRequestId` identificano la POST corrente. L'accettazione e best-effort, non ack di persistenza: filtri, overflow e guasti I/O possono impedire la registrazione. Il reporter frontend invia attualmente solo livello `Error`.
+
+### 10.4 Pipeline server e retention
+
+`ServerLoggingConfiguration` legge `Logging:LogLevel`, default `Information`, con livelli .NET `Trace..None`. Override arbitrari di categoria, prefisso piu lungo prioritario su `Category` o fallback `SourceContext`; `None` disabilita il logging, non e un evento. `SafeJsonLogFormatter` rende i livelli Serilog `Verbose`/`Fatal` come `Trace`/`Critical`, sanitizza ricorsivamente proprieta prima di renderizzare il messaggio e limita dimensione/profondita. I log conservano dettaglio diagnostico sanitizzato e limitato, non una copia integrale illimitata di qualsiasi eccezione.
+
+Contesto browser: `FrontendLogService` preserva solo valori diagnostici delle chiavi `operation`, `assetId`, `holdId`, `status`, `statusCode`, `errorType`, `retryCount`, `phase`, `resource`, `errorClass`, `event`, sanitizzandoli; chiavi sensibili o sconosciute hanno valore oscurato. L'estensione alle tre chiavi frontend ha regressioni dedicate e non consente payload grezzi. Pattern sensibili, credenziali e dati personali riconoscibili vengono oscurati, ma nessuna euristica garantisce di riconoscere ogni dato personale arbitrario non etichettato: obbligo dei chiamanti inviare solo sintesi diagnostiche.
+
+`BoundedAsyncSink` usa Channel bounded `DropWrite`, default `Logging:QueueCapacity = 2048`, un consumer background e drain in shutdown. Nessuna attesa I/O sul produttore; scrittura file e retention nel consumer. `LogFileRetention` seleziona soltanto il pattern rolling configurato e cancella file con `LastWriteTimeUtc < utcNow - RetentionDays` (default `7`), non i file eccedenti un conteggio. Sweep iniziale e al primo ciclo dopo cambio data UTC, incluso timer idle di un minuto; batch limitati evitano che carico continuo affami la manutenzione. File estranei preservati, errori filesystem best-effort via SelfLog. Nessuna promessa di cancellazione riuscita con ACL/I/O impeditivi o di retention istantanea a mezzanotte.
+
+La guida italiana [backend-contracts.md](../docs/backend-contracts.md) documenta i contratti backend. I gate documentali e di tracciabilita sono strutturali, non certificazioni semantiche.
 
 ## 11. Benchmark prestazionale
 
@@ -465,7 +524,9 @@ Metodo vincolante:
 - target pass: mediana FPS >= 30;
 - risultato documentato nei report test/performance.
 
-Il benchmark usa una build frontend di produzione e Chromium headed con `deviceScaleFactor=1`. I 40 identificatori della fixture riutilizzano gli asset reali disponibili, ma ciascuno crea una distinta istanza Three.js, un rigid body e un collider. Gli FPS sono calcolati sui render Three.js effettivi in finestre da un secondo. Long Tasks API e heartbeat misurano separatamente caricamento e interazione; il gate di blocco e nessun long task oltre 200 ms. La latenza endpoint include validazione e commit della transazione. Il risultato JSON registra anche canvas, renderer WebGL e profilo hardware.
+Il runner corrente usa build frontend di produzione e profili split-phase: rendering sintetico e input mouse ripetibile separati, con `8` hold nel profilo tipico e `40` nel complesso. Gli ID riutilizzano due modelli reali, ma creano istanze, corpi e collider distinti. Long Tasks API e heartbeat misurano le fasi; solver e dispatch pointerup sono tempi distinti, non completamento GPU/paint. Il profilo nominale mantiene almeno `60 s` per fase e viewport `1920x1080`.
+
+Per v0.0.1 le limitazioni del metodo e delle misure sono eccezioni di release accettate (`DEC-029`), non blocchi di chiusura. Esiti, snapshot, hardware e limiti di copertura sono riportati soltanto in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md); nessuna ricertificazione del sorgente o dei FPS continui durante input e implicita nell'accettazione.
 
 ## 12. Gestione versioni dipendenze
 

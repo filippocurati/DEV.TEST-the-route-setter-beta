@@ -1,6 +1,7 @@
 import { access, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { checkFrontendDocumentation } from './documentation-scope.mjs';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const projectRoot = resolve(sourceRoot, '..');
@@ -9,6 +10,13 @@ const requiredDocuments = [
   'docs/applicazione.md',
   'docs/test-automatici.md',
   'docs/checklist-fase-12.md',
+  'sdd-specs/00-costituzione.md',
+  'sdd-specs/01-specifica-requisiti.md',
+  'sdd-specs/02-design-tecnico.md',
+  'sdd-specs/03-piano-implementazione.md',
+  'sdd-specs/04-tracciabilita.md',
+  'sdd-specs/05-open-decisions-guidate.md',
+  'sdd-specs/06-stato-versione-v0.0.1.md',
 ];
 const errors = [];
 
@@ -51,39 +59,20 @@ for (const documentPath of requiredDocuments) {
   }
 }
 
-const typescriptModule = await import(pathToFileURL(resolve(sourceRoot, 'frontend/node_modules/typescript/lib/typescript.js')).href);
-const typescript = typescriptModule.default ?? typescriptModule;
-const classFiles = [
-  'frontend/src/catalog/sessionCatalog.ts',
-  'frontend/src/catalog/holdDetailsModal.ts',
-  'frontend/src/input/holdCommands.ts',
-  'frontend/src/interaction/holdOverlay.ts',
-  'frontend/src/physics/physicsWorld.ts',
-];
-for (const relativePath of classFiles) {
-  const sourceText = await readFile(resolve(sourceRoot, relativePath), 'utf8');
-  const sourceFile = typescript.createSourceFile(relativePath, sourceText, typescript.ScriptTarget.Latest, true);
-  visit(sourceFile, relativePath, sourceText);
+const frontend = await checkFrontendDocumentation(resolve(sourceRoot, 'frontend/src'));
+if (frontend.length === 0) errors.push('Nessun sorgente TypeScript applicativo scoperto: ambito JSDoc vuoto.');
+const declarations = frontend.reduce((total, file) => total + file.declarations, 0);
+const documented = frontend.reduce((total, file) => total + file.documented, 0);
+for (const file of frontend) {
+  for (const missing of file.missing) {
+    errors.push(`JSDoc mancante per ${missing.name} in frontend/src/${file.path}:${missing.line}.`);
+  }
 }
+console.log(`JSDoc frontend: ${documented}/${declarations} dichiarazioni documentate in ${frontend.length} file .ts applicativi (esclusi .d.ts e test esterni a src). Funzioni dichiarate con nome, classi con nome, interfacce, costruttori, metodi/firme e accessori; escluse arrow e function expression. Ogni firma conta separatamente. Presenza di descrizioni, non verifica della lingua o della qualita semantica. XML backend escluso dal gate automatico.`);
 
 if (errors.length > 0) {
   console.error(errors.join('\n'));
   process.exitCode = 1;
 } else {
-  console.log(`Documentazione completa: ${requiredDocuments.length} documenti, ${diagramCount} diagrammi e 5 requisiti DOC verificati.`);
-}
-
-function visit(node, relativePath, sourceText) {
-  if ((typescript.isClassDeclaration(node) || typescript.isMethodDeclaration(node) || typescript.isConstructorDeclaration(node))
-    && !hasJsDoc(node, sourceText)) {
-    const position = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart());
-    const name = node.name?.getText() ?? 'constructor';
-    errors.push(`JSDoc mancante per ${name} in ${relativePath}:${position.line + 1}.`);
-  }
-  typescript.forEachChild(node, (child) => visit(child, relativePath, sourceText));
-}
-
-function hasJsDoc(node, sourceText) {
-  const ranges = typescript.getLeadingCommentRanges(sourceText, node.getFullStart()) ?? [];
-  return ranges.some((range) => sourceText.slice(range.pos, range.end).startsWith('/**'));
+  console.log(`Controlli documentali strutturali superati: ${requiredDocuments.length} documenti, ${diagramCount} diagrammi, riferimenti DOC e JSDoc in tutti i ${frontend.length} file scoperti. Non certificano conformita semantica o completezza applicativa.`);
 }

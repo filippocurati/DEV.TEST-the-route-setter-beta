@@ -1,15 +1,19 @@
-import { Box3, Group, Material, Mesh, Object3D, Texture, Vector3 } from 'three';
+import { Box3, Group, LoadingManager, Material, Mesh, Object3D, Texture, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { fetchBinaryAsset, type HoldManifest } from '../api/holdApi';
+import { AppError, toAppError } from '../errors/AppError';
 
 /** Modello catalogo riutilizzabile, separato dalle trasformazioni delle istanze in scena. */
 export interface HoldModelResource {
   readonly definition: HoldManifest;
   readonly template: Group;
+  /** Clona la gerarchia grafica mantenendo condivise geometrie, materiali e texture. */
   createInstance(): Group;
+  /** Decrementa i riferimenti e libera le risorse GPU soltanto all'ultimo utilizzatore. */
   dispose(): void;
 }
 
+/** Modello condiviso e conteggio delle risorse catalogo che ne mantengono la proprieta. */
 interface CachedModel {
   readonly template: Group;
   references: number;
@@ -24,11 +28,19 @@ export async function loadHoldModel(definition: HoldManifest): Promise<HoldModel
     cachedPromise = fetchBinaryAsset(definition.modelUrl).then(async (bytes) => {
       const modelUrl = new URL(definition.modelUrl, window.location.href);
       const assetBaseUrl = `${modelUrl.pathname.slice(0, modelUrl.pathname.lastIndexOf('/') + 1)}assets/`;
-      const gltf = await new GLTFLoader().parseAsync(bytes, assetBaseUrl);
+      const manager = new LoadingManager();
+      let resourceFailed = false;
+      // GLTFLoader puo risolvere il modello anche quando una texture non viene caricata.
+      manager.onError = () => { resourceFailed = true; };
+      const gltf = await new GLTFLoader(manager).parseAsync(bytes, assetBaseUrl);
+      if (resourceFailed) {
+        disposeObject3D(gltf.scene);
+        throw new AppError('Impossibile caricare le risorse del modello della presa.', { category: 'AssetLoad' });
+      }
       return { template: gltf.scene, references: 0 };
     }).catch((error) => {
       modelCache.delete(definition.modelUrl);
-      throw error;
+      throw toAppError(error, 'Impossibile leggere il modello della presa.', { category: 'AssetLoad' });
     });
     modelCache.set(definition.modelUrl, cachedPromise);
   }

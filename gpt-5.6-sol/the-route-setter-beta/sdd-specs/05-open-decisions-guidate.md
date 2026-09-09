@@ -1,6 +1,10 @@
-# Open decisions guidate
+# Decisioni e regole operative
 
-In V3 i punti OPEN sono ridotti al minimo e non devono alterare il comportamento richiesto.
+Baseline v0.0.1: sviluppo CHIUSO e ACCETTATO dall'utente con limiti noti (`DEC-029`). Le voci `OPEN-002` e `OPEN-003` conservano gli identificativi delle regole per evoluzioni future, non decisioni pendenti per questa release.
+
+Costituzione e requisiti correnti restano normativi con le revisioni e le eccezioni di release approvate esplicitamente. Le decisioni non certificano automaticamente implementazione o copertura universali. [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md) e l'unica fonte di stato, rischi, eccezioni ed evidenze con provenienza; i report originali di fase restano storici.
+
+Prevalenza: `DEC-028` approva prefisso dei click senza sliding e indici hull obbligatori; `DEC-029` sostituisce lo stato bloccante della release descritto in precedenza da `DEC-027/028`. Le decisioni precedenti conservano l'evoluzione tecnica rilevante, non elenchi di attivita ancora necessarie per chiudere v0.0.1.
 
 ## DEC-001 - Shortcut tastiera trasformazioni
 
@@ -14,7 +18,7 @@ Decisione:
 
 ## OPEN-002 - Estensione endpoint REST
 
-Stato: OPEN GUIDATO.
+Stato: REGOLA APPROVATA per evoluzioni future, non blocco di v0.0.1.
 
 Vincoli:
 - gli endpoint baseline di `02-design-tecnico.md` §4 restano obbligatori;
@@ -24,7 +28,7 @@ Vincoli:
 
 ## OPEN-003 - Aggiornamento versioni package nel tempo
 
-Stato: OPEN GUIDATO (residuo operativo).
+Stato: REGOLA APPROVATA per manutenzione futura, non blocco di v0.0.1.
 
 Vincoli:
 - baseline iniziale chiusa in `REQ-DEP-004`;
@@ -55,6 +59,8 @@ Decisione:
 ## DEC-006 - Aggancio diretto e target
 
 Stato: CHIUSA.
+
+Nota di prevalenza: la sola visualizzazione DOM/SVG riportata nella decisione storica sotto e superata da `DEC-020` (shadow 3D, footprint invisibile per i campioni). Il contenuto storico resta invariato.
 
 Decisione:
 - `Aggancia` teletrasporta editorialmente la hold al target;
@@ -89,6 +95,8 @@ Decisione:
 ## DEC-009 - Input e camera
 
 Stato: CHIUSA.
+
+Nota di prevalenza: per la camera durante il drag prevale `DEC-015`, che congela completamente OrbitControls, zoom e pan, non soltanto il pointer corrente. Il contenuto storico sotto resta invariato.
 
 Decisione:
 - fase 9UX mouse desktop;
@@ -129,6 +137,8 @@ Decisione:
 
 Stato: CHIUSA.
 
+Precisazione applicativa corrente: esattamente una query applicativa endpoint (`validatePose`) al pointerup solo per un candidato cambiato e disponibile. No-change, no-hit/candidato indisponibile e annullamento non eseguono query endpoint ne commit. Una validazione puo contenere piu query native contro i collider. La decisione storica sotto non impone query sui no-op.
+
 Decisione:
 - durante il drag la hold reale e il collider restano invariati;
 - nessuna collision query viene eseguita durante pointermove;
@@ -140,6 +150,8 @@ Decisione:
 ## DEC-014 - Movimento drag aderente
 
 Stato: CHIUSA.
+
+Nota di prevalenza: ogni precedente surface-lock del drag e superato da `DEC-024`; resta locale soltanto il click. Non reintrodurre tracking della patch iniziale o sottopassi locali nel drag globale.
 
 Decisione:
 - il drag parte da una delle quattro frecce e resta vincolato alla relativa direzione screen-space;
@@ -175,6 +187,8 @@ Decisione:
 
 Stato: CHIUSA.
 
+Nota di prevalenza: ogni precedente conservazione dell'offset pointer-contact point e sostituita da `DEC-024`. Nel drag libero il contact point coincide con il puntatore; il vincolo di direzione delle frecce resta valido.
+
 Decisione:
 - il drag diretto sulla hold e disponibile soltanto dopo aver attivato `Sposta`;
 - il click ordinario continua a selezionare la hold;
@@ -185,6 +199,8 @@ Decisione:
 ## DEC-018 - Target orientato
 
 Stato: CHIUSA.
+
+Nota di prevalenza: la visualizzazione disco/ellisse sotto e storica e superata da `DEC-020`. La shadow 3D e il target corrente; il footprint resta solo un supporto interno al campionamento.
 
 Decisione:
 - il target visualizza la proiezione prospettica di un disco tangente alla superficie;
@@ -234,6 +250,8 @@ Decisione:
 
 Stato: CHIUSA.
 
+Nota di prevalenza: `DEC-024` sostituisce ogni precedente lock del drag alla superficie/patch iniziale; restano la coerenza locale punto-normale e il surface-lock dei soli click.
+
 Decisione:
 - la chiusura transitiva resta usata per selezionare il gruppo dominante;
 - se il campione centrale e valido la relativa patch prevale, mentre la maggioranza resta il fallback per il centro in un foro;
@@ -256,9 +274,9 @@ Decisione:
 
 ## DEC-025 - Primo gruppo fisica, diagnostica e limiti numerici
 
-Stato: perimetro del primo gruppo DEFINITO su richiesta utente; build e verifiche funzionali finali CONFERMATE, follow-up numerico APERTO. Suite prestazionale headless FALLITA, certificazione hardware non disponibile. Non attesta la chiusura di tutti i difetti fisici.
+Stato: gruppo storico completato nel perimetro richiesto; non attesta la risoluzione generale dei limiti fisici, accettati per v0.0.1 da `DEC-029`.
 
-Prevalenza corrente: `DEC-026` sostituisce soltanto la prescrizione di tolleranza geometrica unica `1 mm` riportata sotto. Il resto della decisione, l'epsilon e tutti gli esiti storici restano invariati.
+Prevalenza: `DEC-026` sostituisce la tolleranza geometrica unica `1 mm` riportata sotto; `DEC-028` approva la semantica del prefisso. Gli esiti del gruppo restano nel [report storico](../phases-outcome/Physics_diagnostics_group_1_done.md).
 
 Decisione:
 - includere tolleranza/diedri, continuita dei click di traslazione e rotazione, diagnostica locale e regressioni; differire interventi backend/catalogo e gestione globale errori;
@@ -267,19 +285,13 @@ Decisione:
 - mantenere tolleranza geometrica `0.001 m` ed epsilon numerico distinto `2e-6 m`; usare normalizzazione di fattore `100` solo nelle query fra coppie convesse supportate, con gli stessi vertici hull e indici precalcolati, senza generazione frontend o modifica della geometria;
 - per i click usare shape cast solo a rotazione fissa e da partenza separata, con arresto al primo contatto; contatti iniziali e rotazione sono gestiti dagli intervalli ricorsivi basati su clearance contro massimo moto dei punti (traslazione piu raggio per angolo). Budget `512`, bound minimo `2e-6 m`, prefisso conservativo se irrisolto, non semplice campionamento di endpoint;
 - usare la broadphase AABB nativa con semiestensione `raggio + prediction` per le query di posa; esporre `lastActionResult.reason` e `lastPoseDiagnostic.uncertain` nello snapshot read-only, senza sentinelle infinite, log persistenti o rete per frame. Esito incerto -> `path-unresolved` nella UI, non collisione accertata;
-- associare `poseValidation.test.ts` e `realWall.test.ts` ai requisiti esistenti: casi sintetici, pavimento/pinna nello stesso collider con contatto iniziale, 40 collider lontani senza narrowphase aggiuntiva, determinismo, query senza mutazioni/rete e asset reali invariati. Esiti finali confermati: 215/215 unitari in 11 file, 31/31 E2E, zero errori pageerror/console/HTTP nella traccia e build frontend superata; backend invariato, 33/33 dalla verifica precedente;
-- distinguere il benchmark Node su 40 hold reali (mediane endpoint 1.7-6.3 ms, massimo 8.4 ms; mediane click 24-59 ms, massimo 84 ms) dalla suite prestazionale headless SwiftShader FALLITA: 3 FPS contro target 30, long task massimo 829 ms, heartbeat 748 ms. Rendering software, nessuna evidenza su hardware target; nessuna delle due misure certifica le prestazioni richieste.
+- associare `poseValidation.test.ts` e `realWall.test.ts` ai requisiti esistenti: casi sintetici, pavimento/pinna nello stesso collider con contatto iniziale, 40 collider lontani senza narrowphase aggiuntiva, determinismo, query senza mutazioni/rete e asset reali invariati.
 
-Limiti e follow-up:
-- Rapier `0.12.0` puo sottostimare la profondita per faccia vicino alle giunzioni interne dei triangoli; la corroborazione di intersezione non corregge necessariamente tale profondita;
-- il contenimento completo di una presa in un TriMesh chiuso, senza intersecarne la superficie, non viene rilevato: il TriMesh non fornisce qui un test generale di volume solido;
-- il bound del moto e l'arresto conservativo degli intervalli irrisolti non certificano l'accuratezza delle query native su geometrie arbitrarie degeneri, ne risolvono tutti i casi numerici. La regressione pavimento/pinna passa, ma non elimina il limite nativo dei cast da contatto iniziale, gestiti tramite intervalli;
-- riprodurre e valutare separatamente gli edge case residui prima di dichiararli risolti. Se occorre un upgrade Rapier o un cambio di rappresentazione fisica, richiedere approvazione utente prima di ampliare il perimetro; per upgrade mantenere PR dedicata, pinning, lockfile, nota compatibilita e suite completa secondo `OPEN-003`;
-- non sovrascrivere report storici; il report previsto e `phases-outcome/Physics_diagnostics_group_1_done.md`, da produrre separatamente da questo aggiornamento documentale.
+Gli algoritmi conservativi non rendono infallibili le query native. Eventuali upgrade Rapier o cambi di rappresentazione fisica richiedono un perimetro approvato e le verifiche di `OPEN-003`, non sono impliciti nella chiusura v0.0.1.
 
 ## DEC-026 - Tolleranza parete configurabile e separata dalle prese
 
-Stato: decisione APPROVATA, implementazione e verifiche finali CONFERMATE dall'utente: unitari `331/331` in `12` file, E2E `43/43` superati. Verificata anche la configurazione su build produzione in dist temporanea, modificando il file reale `5 -> 3 -> 5` e ricaricando senza rebuild fra le modifiche. Gli esiti del primo gruppo e delle fasi precedenti non vengono riscritti; il follow-up numerico resta aperto.
+Stato: APPROVATA e IMPLEMENTATA nel perimetro della configurazione fisica. L'accettazione del bug e registrata in `DEC-027`; la chiusura della versione con i limiti noti e in `DEC-029`.
 
 Decisione:
 - sostituire soltanto la parte tolleranza di `DEC-025`: parete configurabile `1..10 mm`, estremi inclusi e decimali ammessi, default `5 mm`; fra prese `1 mm` immutabile; epsilon numerico `2e-6 m` invariato;
@@ -291,17 +303,44 @@ Decisione:
 - in sviluppo modificare il file `public` servito da Vite e ricaricare, senza compilazione o riavvio backend/frontend. Vite puo ricaricare automaticamente alla modifica: esportare prima di editare. Reload perde la sessione; JPG conserva solo un'immagine, non una tracciatura editabile;
 - in produzione installazione/build/deploy iniziali del codice sono necessari. Successivamente modificare il `dist/physics-config.json` distribuito e ricaricare non richiede rebuild/riavvio con server statico. Modificare soltanto il sorgente `public` richiede rebuild o copia nel deploy; mantenere li il valore permanente perche il build successivo sovrascrive `dist`. Configurare server/proxy/cache per rispettare `no-store`;
 - esporre in sola lettura `window.__ROUTE_SETTER_SCENE__.collisionTolerancesMm`, normalmente `{ wall: 5, holds: 1 }`, e `lastPoseDiagnostic.toleranceMeters`; nessun controllo live tramite console o logging/rete per frame;
-- proporre all'utente prove a `1 mm` (baseline), `3 mm` (conservativa), `5 mm` (raccomandata), `7.5` e `10 mm` (esplorative). Non aumentare la soglia fra prese o il limite angolare per mascherare difetti.
+- non aumentare la soglia fra prese o il limite angolare per mascherare difetti.
 
-Evidenze reali verificate e comunicate dall'utente, con asset e collider Hold1/Hold2 invariati:
+Il [report DEC-026](../phases-outcome/Wall_tolerance_configuration_done.md) conserva gli esiti storici. Le prove automatiche e strumentali furono eseguite dall'agente, non dall'utente; la conferma dell'utente riguarda il funzionamento atteso. La configurazione non garantisce agganciabilita universale o compensazione di tutte le imperfezioni dei modelli.
 
-| Parete mm | Baseline laterale accettata, su 9 pose per hold | Griglia accettata, su 52 pose per hold (Hold1 / Hold2) |
-|---|---|---|
-| 1 | 3 / 9 ciascuna | 8 / 7 |
-| 3 | 7 / 9 ciascuna | 29 / 29 |
-| 5 | 9 / 9 ciascuna | 45 / 45 |
-| 10 | 9 / 9 ciascuna | 46 / 46 |
+## DEC-027 - Accettazione bug e riconciliazione applicazione
 
-Gli scontri profondi parete di circa `120 mm` (Hold1) e `200 mm` (Hold2) restano bloccati a tutte le soglie verificate. Sui target prima rifiutati con profondita circa `4 mm`, passi locali `+/-1 cm` e twist `+/-1 grado` falliscono a `1` e `3 mm`, passano a `5` e `10 mm`. La griglia e una misura comunicata dall'utente, non una dichiarazione di copertura integrale della suite o di ogni superficie; risultati e provenienza in `docs/test-automatici.md`.
+Stato: bug originale CHIUSO per conferma esplicita dell'utente. Il precedente stato bloccante della release e superato da `DEC-029`; le due scelte normative della riconciliazione sono state approvate in `DEC-028`.
 
-Limiti: nessuna garanzia di agganciabilita di tutte le superfici o di compensazione di tutte le imperfezioni di modelli da foto/fotogrammetria. Restano i limiti Rapier e il follow-up di `DEC-025`; nessun upgrade, modifica asset o intervento generale backend implicito. Il report finale e `phases-outcome/Wall_tolerance_configuration_done.md`; backend non modificato, `33/33` resta solo risultato storico. I report storici restano intatti.
+Decisione storica:
+- registrare la conferma del funzionamento atteso e della correzione richiesta, distinta dalle verifiche strumentali;
+- avviare il consolidamento `CON01..CON09` senza eliminare requisiti o dedurre conformita dalla sola presenza di test;
+- preservare soglie e configurazione `DEC-026`, separazione mesh/collider e drag endpoint-only;
+- riconciliare esplicitamente la semantica dei click e il contratto degli indici hull, poi definiti da `DEC-028`.
+
+## DEC-028 - Prefisso dei click e indici hull obbligatori
+
+Stato: CHIUSA, entrambe le scelte APPROVATE esplicitamente dall'utente. La decisione tecnica resta valida; lo stato di release precedentemente bloccante e superato dall'accettazione esplicita `DEC-029`.
+
+Scelta 1, `REQ-FIS-004`:
+- sostituire il precedente obbligo move-and-slide con il prefisso conservativo valido lungo la direzione del click richiesto, entro riproiezione e surface-lock locali; non mantenere separatamente componenti libere per scorrere automaticamente lungo un ostacolo o aggirarlo;
+- preservare il percorso attivo `maximumValidPoseFraction`: click traslazione e rotazione arrestati al prefisso validato, arresto conservativo in caso irrisolto; drag e riposizionamenti editoriali restano endpoint-only;
+- mantenere le query native Rapier come base della validazione e il KinematicCharacterController come foundation legacy/opzionale, non solver obbligatorio dei click attivi. Restano architettura client-side, mesh/collider separati, hull precalcolati, assenza di dinamica/impulsi, autostep e snap-to-ground disabilitati;
+- nessun cambiamento a tolleranze, surface-lock, asset o versioni; i controlli di `REQ-FIS-003`/`REQ-FIS-011` restano richiesti con l'eccezione di release `DEC-029`, non una garanzia universale ottenuta dalla scelta.
+
+Scelta 2, `REQ-HUL-003`:
+- `sourceHash`, `vertices` e `indices` obbligatori e non null, con facce triangolari valide secondo lo schema del design §5; il backend genera e documenta gli indici e il frontend li consuma con `convexMesh`;
+- nessuna migrazione o retrocompatibilita necessaria per collider senza indici, nessun fallback o generazione hull frontend (`REQ-HUL-006` invariato). La rigenerazione ordinaria di file invalidi resta parte del processore backend, non un programma di migrazione;
+- contratto e OpenAPI allineati a `ColliderDocument`/`HoldColliderDocument`.
+
+## DEC-029 - Chiusura v0.0.1 con supporto Chrome e limiti accettati
+
+Stato: APPROVATA esplicitamente dall'utente. Sviluppo v0.0.1 COMPLETATO, CHIUSO e ACCETTATO con limiti noti.
+
+Decisione:
+- chiudere lo sviluppo di v0.0.1 e archiviare il consolidamento `CON01..CON09`; le attenzioni residue sono accettate e non bloccano questa release;
+- aggiornare con approvazione dell'autore `C12`, `REQ-ARC-007` e `app_definition.md`: solo Chrome Stable desktop con WebGL 2.0 e ufficialmente supportato. Ultima versione testata Chrome 152; nessuna promessa automatica di compatibilita con ogni futura Stable del vendor. Edge e Firefox restano esplorativi, non target ufficiali ne gate di release;
+- mantenere Rapier `0.12.0` con limiti noti accettati come eccezione di release: controlli di collisione sull'intero hull e soglie separate restano obbligatori, ma non costituiscono garanzia universale di CCD, impenetrabilita o agganciabilita. Nessuna soluzione generale, modifica degli asset o upgrade del motore e dichiarata o implicita;
+- accettare le altre limitazioni e attenzioni documentate in [06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md), unica fonte di stato e rischi della versione, senza duplicarne qui l'elenco. Le eccezioni non eliminano i requisiti funzionali: tutti i 101 requisiti attivi e l'ID storico restano conservati;
+- mantenere le scelte tecniche `DEC-028`. Questa decisione supera il precedente stato di blocco della release di `DEC-027/028`, non la loro evoluzione tecnica valida e non riapre il bug originale;
+- conservare esiti, limiti e provenienza delle verifiche: accettazione utente non significa esecuzione delle suite, test non eseguiti o falliti non diventano superati. I gate obbligatori mantengono il fallimento sui test falliti; le verifiche esplorative non sono blocchi di release;
+- non imporre ulteriori sviluppi, upgrade, prove hardware o run CI remote come prerequisiti retroattivi della chiusura. Eventuali miglioramenti successivi richiedono un nuovo perimetro concordato.

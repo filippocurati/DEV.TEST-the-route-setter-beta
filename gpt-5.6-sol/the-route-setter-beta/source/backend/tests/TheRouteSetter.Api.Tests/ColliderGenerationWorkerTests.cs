@@ -60,6 +60,11 @@ public sealed class ColliderGenerationWorkerTests
         Assert.NotNull(holds);
         Assert.All(holds, hold => Assert.Equal(ColliderAvailability.Pending, hold.ColliderStatus));
         processor.Release.TrySetResult();
+        await WaitForStatusAsync(factory.Services.GetRequiredService<IColliderJobStore>(), ColliderProcessingStatus.Ready);
+        var readiness = await client.GetFromJsonAsync<HoldStatus[]>("/api/holds/status");
+        Assert.Equal(ColliderAvailability.Ready, readiness![0].ColliderStatus);
+        Assert.Equal("/api/holds/Hold1/collider", readiness[0].ColliderUrl);
+        Assert.Equal(ColliderAvailability.Pending, holds[0].ColliderStatus);
     }
 
     /// <summary>
@@ -90,6 +95,8 @@ public sealed class ColliderGenerationWorkerTests
 
         /// <inheritdoc />
         public IReadOnlyList<HoldManifest> GetHolds() => [];
+
+        public IReadOnlyList<HoldStatus> GetHoldStatuses() => [];
 
         /// <inheritdoc />
         public IReadOnlyList<HoldModelAsset> GetHoldModels() => [new("Hold1", "hold1.glb")];
@@ -137,7 +144,7 @@ public sealed class ColliderGenerationWorkerTests
     /// <summary>
     /// Avvia l'applicazione reale sostituendo solo il processore con una versione sospesa.
     /// </summary>
-    private sealed class BacklogApiFactory : WebApplicationFactory<Program>
+    private sealed class BacklogApiFactory : IsolatedApiFactory
     {
         private readonly string rootPath;
         private readonly BlockingColliderProcessor processor;
@@ -145,7 +152,7 @@ public sealed class ColliderGenerationWorkerTests
         /// <summary>
         /// Inizializza la factory con asset temporanei e processore controllato dal test.
         /// </summary>
-        public BacklogApiFactory(string rootPath, BlockingColliderProcessor processor)
+        public BacklogApiFactory(string rootPath, BlockingColliderProcessor processor) : base(rootPath)
         {
             this.rootPath = rootPath;
             this.processor = processor;
@@ -156,6 +163,7 @@ public sealed class ColliderGenerationWorkerTests
         /// </summary>
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>

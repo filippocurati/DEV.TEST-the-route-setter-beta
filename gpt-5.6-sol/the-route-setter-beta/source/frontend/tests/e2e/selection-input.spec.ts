@@ -170,20 +170,37 @@ test.describe('selezione e comandi contestuali 9UX', () => {
 
   test('nasconde e ripristina la shadow e annulla il rilascio fuori viewport senza superficie', async ({ page }) => {
     await attachAtWallCenter(page);
-    await page.getByRole('button', { name: 'Sposta' }).click();
-    const box = (await page.locator('[data-move="up"]').boundingBox())!;
     const canvasBox = (await page.locator('[data-scene-canvas]').boundingBox())!;
+    const cameraBeforeZoom = (await sceneState(page)).cameraPosition;
+    await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+    await page.mouse.wheel(0, 600);
+    await expect.poll(async () => (await sceneState(page)).cameraPosition).not.toEqual(cameraBeforeZoom);
+    await page.getByRole('button', { name: 'Sposta' }).click();
+    const handle = page.locator('[data-move="up"]');
+    const box = (await handle.boundingBox())!;
+    await handle.evaluate(element => {
+      element.addEventListener('pointerup', event => {
+        const pointer = event as PointerEvent;
+        element.setAttribute('data-release-trusted', String(pointer.isTrusted));
+        element.setAttribute('data-release-captured', String(element.hasPointerCapture(pointer.pointerId)));
+      }, { capture: true, once: true });
+    });
     const before = await sceneState(page);
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
+    const outsideY = 5;
+    expect(outsideY).toBeLessThan(canvasBox.y);
+    expect(x).toBeGreaterThan(0);
+    expect(x).toBeLessThan(page.viewportSize()!.width);
     await page.mouse.move(x, y);
     await page.mouse.down();
     await page.mouse.move(x, y - 60, { steps: 3 });
     await expect.poll(async () => (await sceneState(page)).dragCandidateEndpointAvailable).toBe(true);
     expect((await sceneState(page)).dragShadowVisible).toBe(true);
 
-    // Il pointer capture della freccia conserva il gesto anche fuori viewport.
-    await page.mouse.move(x, -canvasBox.height * 2);
+    // Resta nella pagina: Firefox non consegna il mouseup fuori dalla finestra.
+    // Lo zoom-out rende il punto richiesto esterno alla parete senza simulare eventi.
+    await page.mouse.move(x, outsideY);
     await expect.poll(async () => (await sceneState(page)).lastActionResult?.reason).toBe('no-surface');
     const missed = await sceneState(page);
     expect(missed.lastActionResult?.status).toBe('surface-limit');
@@ -197,9 +214,11 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     expect(recovered.dragCandidateEndpointAvailable).toBe(true);
     expect(recovered.lastActionResult?.status).toBe('previewing');
     expect(recovered.lastActionResult?.reason).toBeUndefined();
-    await page.mouse.move(x, -canvasBox.height * 2);
+    await page.mouse.move(x, outsideY);
     await expect.poll(async () => (await sceneState(page)).dragCandidateEndpointAvailable).toBe(false);
     await page.mouse.up();
+    await expect(handle).toHaveAttribute('data-release-trusted', 'true');
+    await expect(handle).toHaveAttribute('data-release-captured', 'true');
     const after = await sceneState(page);
     expect(after.lastActionResult).toMatchObject({ status: 'invalid-endpoint', reason: 'no-surface' });
     expect(after.lastActionResult?.message).not.toMatch(/collision/i);
@@ -270,8 +289,7 @@ test.describe('selezione e comandi contestuali 9UX', () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - 80);
     await expect.poll(async () => (await sceneState(page)).holdStates.Hold2.physicalState).toBe('attached');
     expect((await sceneState(page)).lastActionResult?.reason).toBeUndefined();
-    // Dopo il commit su pointerup, il click sul punto di contatto puo deselezionare la mesh.
-    await clickHold(page, 'Hold2');
+    expect((await sceneState(page)).selectedHoldId).toBe('Hold2');
     await page.getByRole('button', { name: 'Sposta' }).click();
     const handleBox = (await page.locator('[data-move="down"]').boundingBox())!;
     const attached = await sceneState(page);

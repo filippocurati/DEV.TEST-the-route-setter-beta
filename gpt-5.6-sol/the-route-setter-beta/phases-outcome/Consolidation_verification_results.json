@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "verificationDate": "2026-09-09",
+  "runId": "route-consolidation-final-20260909",
+  "evidenceSource": "Commands executed and machine-readable results collected in this workspace; not user-reported counts.",
+  "status": "current-test-suites-and-final-structural-gates-passed; prior-edge-failures-unresolved; general-physics-partial",
+  "scope": {
+    "functionalEditsDuringVerification": false,
+    "testEditsDuringVerification": false,
+    "repositoryOutput": "phases-outcome/Consolidation_verification_results.json",
+    "backendReportMoved": false,
+    "performanceRerun": false,
+    "edgeRerun": false,
+    "browserExecution": "Full suites, sequential browsers, headless, one worker, no grep exclusions, retries disabled, traces enabled.",
+    "frontendE2EServing": "Existing Vite dev-server configuration; production build verified separately.",
+    "backendE2EServing": "Fresh Release build, launched per browser with --no-build --no-restore --no-launch-profile.",
+    "firefoxScope": "Pinned Playwright Firefox 125.0.1 engine, not current Firefox Stable.",
+    "latestVendorReleaseVerified": false
+  },
+  "artifacts": {
+    "currentRoot": "C:/Users/FCurati/AppData/Local/Temp/opencode/route-consolidation-final-20260909",
+    "priorFullMatrixRoot": "C:/Users/FCurati/AppData/Local/Temp/opencode/route-final-validation-20260909",
+    "priorPerformanceRoot": "C:/Users/FCurati/AppData/Local/Temp/opencode/route-con07-performance-certification",
+    "currentSummary": "summary.json",
+    "pathsAreRelativeToCurrentRootUnlessOtherwiseSpecified": true,
+    "rawResultsSha256": {
+      "vitest.json": "3c9bfe27c01cfbf358d4ddca04befd9aadd485973dc790189307547b39578d94",
+      "backend-release.trx": "c9ae90cbbbc8fe89b6d5ed5fa9f1be6a81209986c1e770e1e64471a97de0f065",
+      "tooling-unit.log": "9dca1a1aa648772d670e42a61a6035fc6953b7e9dae744ee5d845df95fda9b84",
+      "chromium/playwright.json": "724edbcd4401ebf13a808226c92220220d1340211c8e7e12b772b196fb21664e",
+      "chrome/playwright.json": "abec4f18f1fd4c6cfc650e113e23792cf333edeb937f24c4516bd06ddf4e83ae",
+      "firefox/playwright.json": "b58497d3442541b62d4ef5e673c4b4e22d7ea153b59d01800bf9979d88cf96da"
+    },
+    "browserArtifacts": ["playwright.json", "playwright-junit.xml", "playwright-report/", "results/", "assets-verification.json"],
+    "preservedPriorPerformance": {
+      "directory": "prior-performance-evidence/",
+      "copiedJsonAndLogFiles": 39,
+      "allCopiesHashIdenticalToOriginals": true,
+      "originalsOverwritten": false
+    }
+  },
+  "builds": [
+    {
+      "name": "frontend-production",
+      "command": "npm run build",
+      "expandedCommand": "tsc && vite build",
+      "exitCode": 0,
+      "finishedUtc": "2026-09-09T08:21:58.389Z",
+      "javascriptBundle": "dist/assets/index-BbZ8wvLN.js",
+      "warnings": ["Vite large-chunk advisory: generated JavaScript chunk exceeds 500 kB."],
+      "evidence": "build.log"
+    },
+    {
+      "name": "backend-release",
+      "command": "dotnet build source/backend/tests/TheRouteSetter.Api.Tests/TheRouteSetter.Api.Tests.csproj --configuration Release --no-restore",
+      "builtProjects": ["TheRouteSetter.Api", "TheRouteSetter.Api.Tests"],
+      "exitCode": 0,
+      "warnings": 0,
+      "errors": 0,
+      "finishedUtc": "2026-09-09T08:21:54.355Z",
+      "evidence": "backend-build.log"
+    }
+  ],
+  "currentTestResults": [
+    {
+      "suite": "frontend-unit",
+      "runner": "Vitest 1.6.0",
+      "files": 18,
+      "total": 447,
+      "passed": 447,
+      "failed": 0,
+      "skipped": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "evidence": ["vitest.json", "vitest-junit.xml", "unit.log"]
+    },
+    {
+      "suite": "tooling-unit",
+      "runner": "Node test runner, --experimental-strip-types --test --test-concurrency=1",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "files": [
+        "source/frontend/scripts/con07-tooling.test.mjs",
+        "source/frontend/scripts/con07-input-observer.test.mjs",
+        "source/scripts/check-test-traceability.test.mjs",
+        "source/scripts/documentation-scope.test.mjs"
+      ],
+      "evidence": ["tooling-unit.log"]
+    },
+    {
+      "suite": "backend-release",
+      "runner": "VSTest 17.11.1, net8.0, xUnit",
+      "command": "dotnet test source/backend/tests/TheRouteSetter.Api.Tests/TheRouteSetter.Api.Tests.csproj --configuration Release --no-build --no-restore --logger trx;LogFileName=backend-release.trx",
+      "total": 110,
+      "passed": 110,
+      "failed": 0,
+      "skipped": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "evidence": ["backend-release.trx", "backend-test.log"]
+    },
+    {
+      "suite": "full-e2e-chromium",
+      "browserVersion": "125.0.6422.26",
+      "runtimeKind": "bundled Playwright Chromium",
+      "startedUtc": "2026-09-09T08:23:29.428Z",
+      "durationMs": 140254.64,
+      "total": 57,
+      "passed": 57,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "frontendPort": 20173,
+      "backendPort": 20080,
+      "evidence": ["chromium/playwright.json", "chromium/playwright-junit.xml"]
+    },
+    {
+      "suite": "full-e2e-chrome",
+      "browserVersion": "152.0.7977.76",
+      "runtimeKind": "installed Chrome channel",
+      "startedUtc": "2026-09-09T08:26:08.963Z",
+      "durationMs": 116030.487,
+      "total": 57,
+      "passed": 57,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "frontendPort": 20174,
+      "backendPort": 20081,
+      "evidence": ["chrome/playwright.json", "chrome/playwright-junit.xml"]
+    },
+    {
+      "suite": "full-e2e-firefox",
+      "browserVersion": "125.0.1",
+      "runtimeKind": "pinned Playwright Firefox engine build 1449",
+      "startedUtc": "2026-09-09T08:28:33.927Z",
+      "durationMs": 148618.779,
+      "total": 57,
+      "passed": 57,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "retries": 0,
+      "exitCode": 0,
+      "frontendPort": 20175,
+      "backendPort": 20082,
+      "jpegStreamRegressionPassed": true,
+      "evidence": ["firefox/playwright.json", "firefox/playwright-junit.xml"]
+    }
+  ],
+  "currentTestTotals": {
+    "total": 742,
+    "passed": 742,
+    "failed": 0,
+    "skipped": 0,
+    "retries": 0,
+    "includesPriorEdgeOrPerformance": false,
+    "includesBuildsOrStructuralGates": false
+  },
+  "structuralGates": [
+    {
+      "name": "traceability",
+      "command": "node source/scripts/check-test-traceability.mjs",
+      "status": "passed",
+      "exitCode": 0,
+      "activeRecords": 101,
+      "requiredActiveRecords": 101,
+      "declaredIdsIncludingHistorical": 102,
+      "missingRecords": [],
+      "executionCount": 2,
+      "evidence": "traceability-gate.log",
+      "limitation": "Structural record/file validation, not assertion coverage or semantic compliance."
+    },
+    {
+      "name": "documentation",
+      "command": "node source/scripts/check-documentation.mjs",
+      "status": "passed-after-documentation-finalization",
+      "exitCode": 0,
+      "initialExecutionPassed": true,
+      "executionCount": 3,
+      "documentedDeclarations": 264,
+      "requiredDeclarations": 264,
+      "applicationTypeScriptFiles": 24,
+      "previousFailure": {
+        "file": "sdd-specs/06-stato-conformita.md",
+        "missingLink": "../phases-outcome/Consolidation_implementation_done.md",
+        "message": "Link locale inesistente in sdd-specs/06-stato-conformita.md: ../phases-outcome/Consolidation_implementation_done.md"
+      },
+      "evidence": "documentation-gate.log",
+      "limitation": "Previous concurrent missing-link failure preserved above. After the consolidation report was completed, npm run test:docs passed with 264/264 declarations. Structural checks do not establish semantic completeness."
+    }
+  ],
+  "priorEdgeEvidence": {
+    "rerunInCurrentBatch": false,
+    "reason": "Unchanged download failures were not repeated in this batch; no filtered acceptance run substituted.",
+    "browserVersion": "152.0.4191.66",
+    "headless": true,
+    "startedUtc": "2026-09-09T07:52:37.797Z",
+    "total": 57,
+    "passed": 54,
+    "failed": 3,
+    "skipped": 0,
+    "retries": 0,
+    "status": "unresolved-prior-full-suite-failures; not a current-source acceptance pass",
+    "report": "C:/Users/FCurati/AppData/Local/Temp/opencode/route-final-validation-20260909/msedge/playwright.json",
+    "failures": [
+      {"file": "tests/e2e/con04.spec.ts", "line": 114, "scenario": "repeated export", "error": "TargetClosedError: Target page, context or browser has been closed"},
+      {"file": "tests/e2e/export.spec.ts", "line": 3, "scenario": "JPG export", "error": "TargetClosedError: Target page, context or browser has been closed"},
+      {"file": "tests/e2e/model-download.spec.ts", "line": 3, "scenario": "model download", "error": "TargetClosedError: Target page, context or browser has been closed"}
+    ],
+    "diagnostic": "Repeated-export attachment recorded three completed exports, stable resource counts, pageClosed=false and browserConnected=true at body finish. Teardown/download-lifecycle interaction is plausible, not established. Headless operation did not remove the failures."
+  },
+  "priorPerformanceEvidence": {
+    "rerunInCurrentBatch": false,
+    "startedUtc": "2026-09-09T07:35:29.851Z",
+    "status": "passed-split-phase-profile-on-earlier-source-snapshot",
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "retries": 0,
+    "browserVersion": "152.0.7977.76",
+    "headless": false,
+    "viewport": {"width": 1920, "height": 1080, "deviceScaleFactor": 1.0000000149011612},
+    "canvasCss": [1616, 1004.3250122070312],
+    "drawingBuffer": [1616, 1004],
+    "renderer": "ANGLE (Intel, Intel(R) Graphics (0x00007DD5) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "softwareRenderer": false,
+    "longTaskObservationAvailable": true,
+    "scenarios": [
+      {
+        "name": "typical",
+        "attachedHolds": 8,
+        "triangles": 160182,
+        "renderDurationMs": 60020.3,
+        "medianFps": 60,
+        "minimumFps": 60,
+        "inputDurationMs": 60253.3,
+        "solverSamples": 118,
+        "solverP50Ms": 2.5,
+        "solverMaxMs": 5.8,
+        "dispatchP50Ms": 3.1,
+        "dispatchMaxMs": 7.0,
+        "inputLongTaskCount": 1,
+        "inputMaxLongTaskMs": 50,
+        "inputHeartbeatP95Ms": 6.6,
+        "pageErrors": 0
+      },
+      {
+        "name": "complex",
+        "attachedHolds": 40,
+        "triangles": 779542,
+        "renderDurationMs": 60006.9,
+        "medianFps": 60,
+        "minimumFps": 60,
+        "inputDurationMs": 85610.0,
+        "solverSamples": 160,
+        "solverP50Ms": 2.7,
+        "solverMaxMs": 5.1,
+        "dispatchP50Ms": 3.4,
+        "dispatchMaxMs": 5.9,
+        "inputLongTaskCount": 0,
+        "inputMaxLongTaskMs": 0,
+        "inputHeartbeatP95Ms": 11.1,
+        "pageErrors": 0
+      }
+    ],
+    "allCameraFreezeAssertionsPassed": true,
+    "allEndpointsCommitted": true,
+    "thresholdsRelaxed": false,
+    "scopeLimitation": "Prior headed Chrome hardware evidence only. Synthetic render-load FPS and telemetry-only normal-input timings are separate phases; not continuous 60 FPS during input, not latest-source recertification, and not cross-browser/universal-hardware certification.",
+    "earlierSmokeFailurePreserved": "Initial complex smoke failed projected-point selection at Hold38 after 74 endpoints. Harness-only bounded real-mouse search and user-agent correction preceded successful corrected smoke and certification; no workload or threshold reduction."
+  },
+  "isolation": {
+    "independentAssetRoots": 3,
+    "originalAssetChanges": [],
+    "allOwnedServerPortsReleased": true,
+    "portsChecked": [20173, 20080, 20174, 20081, 20175, 20082],
+    "applicationAndTestSourcesUnchangedDuringValidation": true,
+    "concurrentNonFunctionalChangesObservedBySourceHashScan": [
+      "source/backend/CON01-CON03-CON05.md",
+      "source/conformity-plan.json"
+    ],
+    "sourceHashScanScope": "source/ excluding generated dependency/build/report directories; does not include sdd-specs/ or phases-outcome/.",
+    "sourceHashEvidence": ["source-before.json", "source-after.json", "source-verification.json"],
+    "originalAssetSha256": {
+      "holds/Hold1/collider.json": "9e0baa11e04e0718cb69be9b915388a38796ca827ce62488dc6a071c57296805",
+      "holds/Hold1/hold1.glb": "892435e4d418ee7446d5c13c715aa0e12ac74837bf73d7ad3103024a4336ba6d",
+      "holds/Hold1/PREV_hold1.png": "40ca9181462ca18585047e02d9851f98cf2098c283bab8a4b533795df793e912",
+      "holds/Hold2/collider.json": "294f17c3b9d5e106789fe70a0afd34fa4a38ab744988579282e2150fb6c52a18",
+      "holds/Hold2/hold2.glb": "ed047f3dafed8d4d42be6418e9005b12c50a22d7776d1b69907a25e045b5933f",
+      "holds/Hold2/PREV_hold2.png": "e07e6149f8194bda1b7723c96ae02ca42a5e6cfc4e59bd484bc2cd7c8a305fd7",
+      "main-wall/modello_parete.glb": "c8db4d75886f287cb638829bec7b9ee438e5d7ca7a4ed6e9ee7c3a636404fc21"
+    }
+  }
+}

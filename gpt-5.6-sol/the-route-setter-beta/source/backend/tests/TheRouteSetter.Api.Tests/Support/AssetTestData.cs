@@ -63,14 +63,14 @@ public sealed class AssetTestData : IDisposable
 /// <summary>
 /// Ospita l'API puntandola alla gerarchia asset temporanea.
 /// </summary>
-public sealed class AssetApiFactory : WebApplicationFactory<Program>
+public sealed class AssetApiFactory : IsolatedApiFactory
 {
     private readonly string rootPath;
 
     /// <summary>
     /// Inizializza la factory con la radice asset del test.
     /// </summary>
-    public AssetApiFactory(string rootPath)
+    public AssetApiFactory(string rootPath) : base(rootPath)
     {
         this.rootPath = rootPath;
     }
@@ -80,6 +80,7 @@ public sealed class AssetApiFactory : WebApplicationFactory<Program>
     /// </summary>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        base.ConfigureWebHost(builder);
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -107,27 +108,28 @@ public sealed class AssetApiFactory : WebApplicationFactory<Program>
 /// </summary>
 public sealed class TestColliderJobStore : IColliderJobStore
 {
-    private readonly Dictionary<string, ColliderProcessingStatus> statuses = new(StringComparer.Ordinal);
+    private readonly ColliderJobStore inner = new();
 
     /// <inheritdoc />
     public ColliderProcessingStatus GetStatus(string holdId, bool colliderFileExists)
     {
-        return statuses.TryGetValue(holdId, out var status)
-            ? status
-            : colliderFileExists ? ColliderProcessingStatus.Ready : ColliderProcessingStatus.Missing;
+        return inner.GetStatus(holdId, colliderFileExists);
     }
 
     /// <inheritdoc />
     public void SetStatus(string holdId, ColliderProcessingStatus status)
     {
-        statuses[holdId] = status;
+        inner.SetStatus(holdId, status);
     }
 
     /// <inheritdoc />
     public void SetPending(string holdId, string modelPath)
     {
-        statuses[holdId] = ColliderProcessingStatus.Pending;
+        inner.SetStatus(holdId, ColliderProcessingStatus.Pending);
     }
+
+    /// <inheritdoc />
+    public void CompleteInitialDiscovery() => inner.CompleteInitialDiscovery();
 
     /// <inheritdoc />
     public bool TryDequeue(out ColliderJob? job)

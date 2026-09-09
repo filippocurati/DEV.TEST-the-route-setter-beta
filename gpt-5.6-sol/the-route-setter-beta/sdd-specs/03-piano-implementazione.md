@@ -1,37 +1,25 @@
 # Piano di implementazione
 ## Applicazione per tracciatura vie climbing indoor
 
-## Come usare questo piano (istruzioni operative per agente AI)
+## Stato del piano v0.0.1
 
-1. Leggere integralmente, prima di iniziare, `app_definition.md`, `sdd-specs/00-costituzione.md`, `sdd-specs/01-specifica-requisiti.md`, `sdd-specs/02-design-tecnico.md`, `sdd-specs/04-tracciabilita.md`, `sdd-specs/05-open-decisions-guidate.md`.
-2. Implementare una sola fase per volta, nell'ordine indicato.
-3. Per ogni fase, rispettare obbligatoriamente:
-   - requisiti `REQ-*` associati;
-   - principi costituzionali `C*`;
-   - vincoli tecnici indicati nel design.
-4. Non passare alla fase successiva finche la Definition of Done non e completa.
-5. Ogni fase deve produrre evidenze: file modificati, test eseguiti, risultati, check manuali ripetibili.
-6. Se emerge un punto OPEN, applicare solo le regole di `05-open-decisions-guidate.md` e documentare la scelta.
+Lo sviluppo di **v0.0.1 e COMPLETATO, CHIUSO e ACCETTATO dall'utente con limiti noti** (`DEC-029`). Il piano di sviluppo e il consolidamento `CON01..CON09` sono archiviati; non costituiscono un backlog obbligatorio per chiudere questa versione. La chiusura non dichiara implementata una soluzione generale ai limiti fisici ne trasforma verifiche parziali in certificazioni complete.
 
-### Congelamento baseline 0-9
+[06-stato-versione-v0.0.1.md](06-stato-versione-v0.0.1.md) e l'unica fonte dello stato di versione, dei rischi, delle eccezioni accettate e degli esiti con provenienza. Le attenzioni residue sono non bloccanti; eventuali sviluppi successivi richiedono un nuovo perimetro concordato, non la riapertura automatica di v0.0.1.
 
-Le fasi 0-9 e i relativi report sono congelati e descrivono la baseline storica gia completata. Non devono essere riscritti retroattivamente. Dalla fase 9UX in avanti prevalgono i requisiti e il design aggiornati per l'interazione contestuale. In particolare non sono piu normativi snap automatico per prossimita, avanti/indietro, shortcut globali, pannello comandi fisso e `Rimuovi presa` nella topbar.
+## Checklist di release v0.0.1
 
-### Primo gruppo precedente (DEC-025)
+- [x] Chiusura dello sviluppo e accettazione esplicita dell'utente registrate in `DEC-029`; bug originale chiuso.
+- [x] Supporto ufficiale limitato a Chrome Stable desktop WebGL 2.0, ultima versione testata Chrome 152; nessuna promessa automatica per future Stable. Edge/Firefox esplorativi, non blocchi di release.
+- [x] Prefisso dei click senza sliding e indici hull obbligatori approvati (`DEC-028`); tutti i 101 requisiti attivi conservati, con eccezioni di release esplicite.
+- [x] Rapier `0.12.0` mantenuto con limiti noti accettati; controlli collisione e soglie obbligatori, nessuna garanzia universale o correzione generale implicita.
+- [x] Limiti delle verifiche e attenzioni residue accettati secondo il documento di stato richiamato sopra; nessun test fallito o non eseguito promosso a superato.
 
-Perimetro richiesto: tolleranza fisica e diedri, continuita dei click, diagnostica locale e regressioni su fixture sintetiche e parete reale invariata. Backend/catalogo e gestione globale errori restano differiti. La verifica usa posa originale sull'intero TriMesh, epsilon numerico `2e-6 m` distinto dalla tolleranza geometrica, normalizzazione query-only convex/convex di fattore `100` e intervalli click con budget `512` e bound minimo `2e-6 m` (design §7.3, §7.9). La precedente soglia unica `1 mm` e sostituita soltanto per la parte tolleranza da `DEC-026`, sotto. Nessuna modifica degli asset o generazione hull frontend.
+## Archivio delle fasi (non normativo)
 
-Restano aperti sottostima della profondita presso giunzioni interne dei triangoli in Rapier `0.12.0` e contenimento completo in TriMesh chiusi: non dichiarare certificazione generale di geometrie degeneri o volumi solidi. Un eventuale upgrade richiede approvazione utente e verifica compatibilita secondo `DEC-025`. Esiti finali confermati: build frontend superata, 215/215 unitari in 11 file, 31/31 E2E con zero errori pageerror/console/HTTP nella traccia. Backend invariato, 33/33 riferito alla verifica precedente. Suite prestazionale headless SwiftShader FALLITA (3 FPS, long task massimo 829 ms, heartbeat 748 ms): nessuna evidenza hardware o certificazione prestazionale; misure Node separate in `docs/test-automatici.md`. Non dedurre la chiusura di tutti i requisiti da questi esiti.
+Tutto il seguito, dal grafo delle dipendenze alla verifica trasversale finale, conserva il piano storico delle fasi 0-12, inclusa 9UX. Task, test da eseguire, Definition of Done e regole di avanzamento descrivono il processo dell'epoca, non obblighi di lavoro ancora aperti o gate correnti della release. Gli esiti originali dei report restano invariati.
 
----
-
-### Configurazione tolleranza corrente (DEC-026)
-
-Perimetro approvato: parete configurabile `1..10 mm` inclusi e decimali, default `5 mm`; hold immutabile `1 mm`, epsilon `2e-6 m` invariato. Il minimo per contatto `distance + tolerance` governa endpoint e intervalli, non il contatto grezzo piu profondo. Sweep da partenza separata sempre prima del primo contatto (anche pavimento); surface-lock `5 gradi`, gap `5 mm` e drag endpoint-only invariati.
-
-File runtime `source/frontend/public/physics-config.json`, chiave unica `wallPenetrationToleranceMm`, numero JSON iniziale `5` senza virgolette, punto decimale e nessun commento. Una fetch bootstrap `no-store`; errore gestito in pagina e avvio impedito se invalido/indisponibile, senza fallback o `pageerror` non gestiti. Questo non amplia il lavoro a backend/catalogo o gestione globale errori. Operativita, export prima dell'edit (possibile auto-reload Vite), perdita sessione e JPG non editabile, distinzione sorgente/deploy e cache in `docs/applicazione.md` e design §7.3.
-
-Verifiche finali: `config/physicsConfig.test.ts`, `physics/poseValidation.test.ts`, `physics/realWall.test.ts` e `e2e/physics-config.spec.ts`, associati ai requisiti esistenti. Unitari `331/331` in `12` file ed E2E `43/43` superati, verificati e comunicati dall'utente. Confermata la priorita di una violazione accertata sull'incertezza di un altro collider, con campi diagnostici coerenti. Verificata una build produzione in dist temporanea: file runtime reale `5 -> 3 -> 5` applicato al reload senza rebuild fra le modifiche. Baseline reale `9` pose per hold, griglia separata `52` per hold, scontri profondi e passi/twist documentati con provenienza in `docs/test-automatici.md`; nessuna garanzia su tutte le superfici o imperfezioni fotografiche. Report finale: `phases-outcome/Wall_tolerance_configuration_done.md`; backend invariato ed esiti storici preservati. Per questo aggiornamento solo documentale eseguire i gate documentazione e tracciabilita e `git diff --check`.
+Per il comportamento corrente prevalgono `app_definition.md`, costituzione, requisiti, design e decisioni approvate. Dalla fase 9UX sono superati snap automatico, avanti/indietro, shortcut globali e pannello comandi fisso. `DEC-026` introduce le soglie separate; `DEC-028` supera indici opzionali e obbligo KCC/move-and-slide; `DEC-029` chiude la versione con i limiti accettati. Non reintrodurre le prescrizioni storiche incompatibili.
 
 ## Dipendenze tra fasi
 
@@ -77,7 +65,7 @@ FASE 0 (Setup)
 
 Nota: FASE 1 e FASE 2 possono procedere in parallelo dopo FASE 0, ma entrambe devono essere complete prima delle fasi frontend che dipendono da API/collider.
 Nota: la FASE 9UX parte dalla baseline congelata della FASE 9 e deve essere completata prima della FASE 10.
-Nota: la prima implementazione della FASE 9UX e documentata da `phases-outcome/Phase_9UX_implementation_done.md` e resta storica. Le specifiche correnti richiedono una reimplementazione della stessa FASE 9UX con drag transazionale e shadow runtime. Il nuovo esito deve essere documentato in `phases-outcome/Phase_9UX-bis_implementation_done.md`, senza eliminare o sovrascrivere il report precedente.
+Nota: la prima implementazione della FASE 9UX e documentata da `phases-outcome/Phase_9UX_implementation_done.md`; la revisione con drag transazionale e shadow runtime da `phases-outcome/Phase_9UX-bis_implementation_done.md`. Entrambi sono report storici; il piano sotto conserva obiettivi e criteri dell'epoca, non lavoro corrente da eseguire.
 
 ---
 
@@ -480,7 +468,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - hold reale e collider invariati durante drag;
 - shadow runtime aderente alla parete durante movimento;
 - nessuna collision query durante pointermove;
-- validazione esclusiva dell'endpoint al rilascio;
+- esattamente una query applicativa endpoint al rilascio solo per candidato cambiato e disponibile; zero per no-change/no-hit/annullamento;
 - endpoint invalido annulla integralmente senza commit parziale;
 - linea retta origine-target e nessun limite massimo di drag;
 - camera completamente congelata durante drag;
@@ -543,7 +531,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - nessuna richiesta di rete per asset shadow e condivisione di geometrie/texture verificata;
 - shadow priva di rigid body, collider e identificatore di picking;
 - hold reale, collider, contact point, normale e twist immutati durante pointermove;
-- esattamente una fase applicativa di validazione endpoint al pointerup;
+- esattamente una query applicativa di validazione endpoint al pointerup per candidato cambiato e disponibile; zero query e zero commit per no-change/no-hit/annullamento;
 - drag senza limite totale della distanza richiesta;
 - drag libero dalla hold attivo solo in `moving`, con contact point sotto al puntatore senza offset iniziale preservato;
 - drag diretto sulla hold non cambia selezione e non muove la camera;
@@ -570,7 +558,7 @@ Conservare popup contestuale e targeting diretto, sostituendo il drag incrementa
 - UX legacy non piu raggiungibile;
 - tutte le azioni contestuali operative con risultati non ambigui;
 - parete impenetrabile nei flussi continui coperti;
-- aggancio diretto valido su tutta la geometria visibile targetizzabile;
+- tutti i triangoli candidabili, ma commit dell'aggancio soltanto se la posa dell'intero hull e valida; nessuna garanzia che tutte le pose siano sempre valide;
 - nessuna transizione automatica fra inclinazioni oltre soglia nei click; drag globale consentito;
 - timer, pointer capture e modalita sempre rilasciati;
 - suite frontend e backend completa verde;
@@ -604,7 +592,7 @@ Chiudere copertura automatica completa e verifiche di regressione.
 - regressione collisioni, targeting e aggancio diretto;
 - regressioni `physics/poseValidation.test.ts`: soglia/epsilon su diedri, winding e trasformazioni rigide, ostacoli sottili fra endpoint liberi, pavimento e pinna nello stesso TriMesh con contatto iniziale, arco di rotazione, esiti incerti, broadphase con 40 collider lontani senza narrowphase aggiuntiva, determinismo, query senza mutazioni o rete;
 - regressioni `physics/realWall.test.ts`: hash parete invariato, collider originali Hold1/Hold2, normali e pose laterali/frontali; questi casi non chiudono i limiti numerici di `DEC-025`;
-- E2E `selection-input.spec.ts`: feedback collisione/no-surface/no-change, rollback e cleanup; inclusi nei 31/31 confermati;
+- E2E `selection-input.spec.ts`: feedback collisione/no-surface/no-change, rollback e cleanup;
 - regressione ciclo detached/attached e modalita contestuali della FASE 9UX;
 - verifica che i comportamenti legacy congelati non siano piu raggiungibili.
 
@@ -671,9 +659,9 @@ Completare documentazione tecnica e operativa conforme ai requisiti.
 
 ---
 
-## Verifica finale trasversale (obbligatoria)
+## Verifica finale trasversale storica (non normativa)
 
-Prima di considerare chiuso il lavoro:
+Checklist del processo originario, non gate di chiusura v0.0.1; per la release vale la checklist chiusa in apertura e l'accettazione `DEC-029`:
 - controllare copertura completa della matrice `sdd-specs/04-tracciabilita.md`;
 - verificare assenza violazioni costituzionali (`C1..C21`);
 - confermare nessuna funzionalita extra non richiesta (autenticazione/persistenza);

@@ -6,6 +6,7 @@ import { HoldOverlay } from './interaction/holdOverlay';
 import { createWallScene } from './scene/wallScene';
 import { downloadGuideImage } from './export/guideImage';
 import { loadPhysicsConfig } from './config/physicsConfig';
+import { ErrorReporter } from './errors/ErrorReporter';
 
 /** Avvia scena, catalogo e ciclo di vita delle prese per la sessione corrente. */
 async function bootstrap(): Promise<void> {
@@ -61,14 +62,17 @@ async function bootstrap(): Promise<void> {
   const feedback = requiredElement<HTMLElement>(app, '[data-catalog-feedback]');
   const generateButton = requiredElement<HTMLButtonElement>(app, '[data-generate-image]');
   const details = new HoldDetailsModal(requiredElement<HTMLDialogElement>(app, '[data-details-dialog]'));
-  const catalog = new SessionCatalog();
+  const reporter = new ErrorReporter(message => { feedback.textContent = message; });
+  reporter.installGlobal();
+  const catalog = new SessionCatalog(error => { feedback.textContent = reporter.report(error, 'Catalog'); });
+  window.addEventListener('beforeunload', () => reporter.dispose(), { once: true });
 
   try {
     const physicsConfig = await loadPhysicsConfig();
-    const [scene] = await Promise.all([
-      createWallScene(viewport, status, physicsConfig),
-      catalog.loadManifest(),
-    ]);
+    await catalog.loadManifest();
+    const scene = await createWallScene(viewport, status, physicsConfig,
+      error => { feedback.textContent = reporter.report(error, 'Scene'); });
+    window.addEventListener('beforeunload', () => { details.close(); scene.dispose(); }, { once: true });
 
     const renderCatalog = async (): Promise<void> => {
       const holds = await catalog.availableHolds();
@@ -97,7 +101,7 @@ async function bootstrap(): Promise<void> {
               feedback.textContent = `${hold.id} aggiunta alla scena.`;
             } catch (error) {
               catalog.release(hold.id);
-              feedback.textContent = error instanceof Error ? error.message : 'Impossibile aggiungere la presa.';
+              feedback.textContent = reporter.report(error, 'HoldPlacement', 'Impossibile aggiungere la presa.');
               await renderCatalog();
             }
           },
@@ -107,8 +111,7 @@ async function bootstrap(): Promise<void> {
               await details.open(hold);
               feedback.textContent = '';
             } catch (error) {
-              details.close();
-              feedback.textContent = error instanceof Error ? error.message : 'Impossibile mostrare i dettagli.';
+              feedback.textContent = reporter.report(error, 'HoldDetails', 'Impossibile mostrare i dettagli.');
             }
           },
         ));
@@ -125,7 +128,7 @@ async function bootstrap(): Promise<void> {
         downloadGuideImage(result.blob);
         feedback.textContent = `Immagine guida generata (${result.width}×${result.height} px).`;
       } catch (error) {
-        feedback.textContent = error instanceof Error ? error.message : 'Impossibile generare l’immagine guida.';
+        feedback.textContent = reporter.report(error, 'ImageExport', 'Impossibile generare immagine guida.');
       } finally {
         delete document.documentElement.dataset.exporting;
         generateButton.disabled = false;
@@ -154,8 +157,7 @@ async function bootstrap(): Promise<void> {
         await details.open(hold);
         feedback.textContent = '';
       } catch (error) {
-        details.close();
-        feedback.textContent = error instanceof Error ? error.message : 'Impossibile mostrare i dettagli.';
+        feedback.textContent = reporter.report(error, 'HoldDetails', 'Impossibile mostrare i dettagli.');
       }
     };
     const overlay = new HoldOverlay(viewport, {
@@ -181,7 +183,10 @@ async function bootstrap(): Promise<void> {
     let lastActionResult = scene.interactionSnapshot().lastActionResult;
     scene.onInteractionChange((snapshot) => {
       overlay.update(snapshot);
-      if (!document.documentElement.dataset.exporting) generateButton.disabled = snapshot.dragPreview !== null;
+      if (!document.documentElement.dataset.exporting) generateButton.disabled = snapshot.failed === true || snapshot.dragPreview !== null;
+      if (snapshot.failed) {
+        list.querySelectorAll<HTMLButtonElement>('[data-use]').forEach(button => { button.disabled = true; });
+      }
       if (snapshot.lastActionResult !== lastActionResult) {
         lastActionResult = snapshot.lastActionResult;
         if (lastActionResult) feedback.textContent = lastActionResult.message;
@@ -201,11 +206,13 @@ async function bootstrap(): Promise<void> {
     });
 
     await renderCatalog();
+    await catalog.watchReadiness(renderCatalog);
     window.addEventListener('beforeunload', () => void catalog.dispose(), { once: true });
   } catch (error) {
     status.textContent = 'Impossibile inizializzare l’applicazione.';
     status.dataset.state = 'error';
-    feedback.textContent = error instanceof Error ? error.message : 'Errore durante l’inizializzazione.';
+    feedback.textContent = reporter.report(error, 'Bootstrap', 'Impossibile inizializzare applicazione.');
+    await catalog.dispose();
   }
 }
 
